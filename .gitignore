@@ -1,0 +1,10 @@
+# Pliki binarne
+server/server
+client/client
+
+# Tymczasowe pliki systemowe
+*.DS_Store
+*.swp
+
+# Katalogi Go
+/vendor
