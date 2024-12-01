@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package taskmanager;
 
+option go_package = "github.com/maciekb2/task-manager/proto;proto";
+
 service TaskManager {
   rpc SubmitTask (TaskRequest) returns (TaskResponse);
   rpc CheckTaskStatus (StatusRequest) returns (StatusResponse);
