@@ -1,0 +1,17 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: taskmanager-client
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: taskmanager-client
+  template:
+    metadata:
+      labels:
+        app: taskmanager-client
+    spec:
+      containers:
+      - name: client
+        image: taskmanager-client:latest
