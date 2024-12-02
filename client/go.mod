@@ -1,4 +1,4 @@
-module taskmanager-client
+module github.com/maciekb2/task-manager/client
 
 go 1.23.3
 
@@ -11,3 +11,5 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240903143218-8af14fe29dc1 // indirect
 	google.golang.org/protobuf v1.34.2 // indirect
 )
+
+replace github.com/maciekb2/task-manager/proto => ../proto
