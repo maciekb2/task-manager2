@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: server
-        image: taskmanager-server:latest
+        image: maciekb2/task-manager-server:latest
         ports:
         - containerPort: 50051
 ---
