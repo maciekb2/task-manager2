@@ -5,6 +5,7 @@ go 1.23.3
 require google.golang.org/grpc v1.68.0
 
 require (
+	github.com/maciekb2/task-manager/proto v0.0.0-00010101000000-000000000000
 	golang.org/x/net v0.29.0 // indirect
 	golang.org/x/sys v0.25.0 // indirect
 	golang.org/x/text v0.18.0 // indirect

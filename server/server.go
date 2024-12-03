@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	pb "asynchronous-task-manager/proto" // Import wygenerowanego kodu z Protobuf (lokalnie w projekcie)
+	pb "github.com/maciekb2/task-manager/proto" // Import wygenerowanego kodu z Protobuf (lokalnie w projekcie)
 
 	"google.golang.org/grpc"
 )
