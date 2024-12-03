@@ -1,4 +1,4 @@
-module github.com/maciekb2/task-manager/proto
+module github.com/maciekb2/task-manager/server
 
 go 1.23.3
 
