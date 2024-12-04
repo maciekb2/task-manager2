@@ -40,7 +40,7 @@ push-client:
 	@echo "Przesyłanie obrazu klienta na Docker Hub..."
 	docker push $(CLIENT_IMAGE):$(TAG)
 
-# Komenda do wdrożenia aplikacji na Minikube
+# Komenda do wdrożenia aplikacji na Kubernetes
 deploy: deploy-server deploy-client
 
 deploy-server:

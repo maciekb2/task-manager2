@@ -8,6 +8,8 @@ import (
 	pb "github.com/maciekb2/task-manager/proto" // Import wygenerowanego kodu z Protobuf (lokalnie w projekcie)
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func main() {
@@ -19,22 +21,40 @@ func main() {
 
 	client := pb.NewTaskManagerClient(conn)
 
-	// Wysyłamy nowe zadanie
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
+	for {
+		// Wysyłamy nowe zadanie
+		taskCtx, taskCancel := context.WithTimeout(context.Background(), 15*time.Second)
+		taskDescription := "Sample Task"
+		log.Printf("Wysyłanie nowego zadania: %s", taskDescription)
 
-	res, err := client.SubmitTask(ctx, &pb.TaskRequest{TaskDescription: "Sample Task"})
-	if err != nil {
-		log.Fatalf("could not submit task: %v", err)
+		res, err := client.SubmitTask(taskCtx, &pb.TaskRequest{TaskDescription: taskDescription})
+		taskCancel()
+		if err != nil {
+			log.Fatalf("could not submit task: %v", err)
+		}
+		log.Printf("Zadanie zostało wysłane z ID: %s", res.TaskId)
+
+		// Sprawdzamy status zadania po 5 sekundach
+		time.Sleep(5 * time.Second)
+
+		statusCtx, statusCancel := context.WithTimeout(context.Background(), 15*time.Second)
+		log.Printf("Sprawdzanie statusu zadania o ID: %s", res.TaskId)
+
+		statusRes, err := client.CheckTaskStatus(statusCtx, &pb.StatusRequest{TaskId: res.TaskId})
+		statusCancel()
+		if err != nil {
+			if status.Code(err) == codes.NotFound {
+				log.Printf("Zadanie o ID %s nie zostało znalezione: %v", res.TaskId, err)
+			} else if status.Code(err) == codes.DeadlineExceeded {
+				log.Printf("Czas na sprawdzenze statusu zadania o ID %s przekroczony. Spróbuj ponownie później.", res.TaskId)
+			} else {
+				log.Fatalf("could not check task status: %v", err)
+			}
+		} else {
+			log.Printf("Status zadania o ID %s: %s", res.TaskId, statusRes.Status)
+		}
+
+		// Opcjonalna przerwa między iteracjami
+		time.Sleep(2 * time.Second)
 	}
-	log.Printf("Task submitted with ID: %s", res.TaskId)
-
-	// Sprawdzamy status zadania po 5 sekundach
-	time.Sleep(5 * time.Second)
-
-	statusRes, err := client.CheckTaskStatus(ctx, &pb.StatusRequest{TaskId: res.TaskId})
-	if err != nil {
-		log.Fatalf("could not check task status: %v", err)
-	}
-	log.Printf("Task status: %s", statusRes.Status)
 }
