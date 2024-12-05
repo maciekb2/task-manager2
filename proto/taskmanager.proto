@@ -4,14 +4,17 @@ package taskmanager;
 
 option go_package = "github.com/maciekb2/task-manager/proto";
 
-
+// Definicja serwisu
 service TaskManager {
   rpc SubmitTask (TaskRequest) returns (TaskResponse);
   rpc CheckTaskStatus (StatusRequest) returns (StatusResponse);
+  rpc StreamTaskStatus (StatusRequest) returns (stream StatusResponse); // Strumieniowanie statusów
 }
 
+// Wiadomości
 message TaskRequest {
   string task_description = 1;
+  string priority = 2; // "LOW", "MEDIUM", "HIGH"
 }
 
 message TaskResponse {
@@ -23,5 +26,5 @@ message StatusRequest {
 }
 
 message StatusResponse {
-  string status = 1;
+  string status = 1; // "QUEUED", "IN_PROGRESS", "COMPLETED", "FAILED"
 }

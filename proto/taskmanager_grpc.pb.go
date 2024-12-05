@@ -19,16 +19,20 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	TaskManager_SubmitTask_FullMethodName      = "/taskmanager.TaskManager/SubmitTask"
-	TaskManager_CheckTaskStatus_FullMethodName = "/taskmanager.TaskManager/CheckTaskStatus"
+	TaskManager_SubmitTask_FullMethodName       = "/taskmanager.TaskManager/SubmitTask"
+	TaskManager_CheckTaskStatus_FullMethodName  = "/taskmanager.TaskManager/CheckTaskStatus"
+	TaskManager_StreamTaskStatus_FullMethodName = "/taskmanager.TaskManager/StreamTaskStatus"
 )
 
 // TaskManagerClient is the client API for TaskManager service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// Definicja serwisu
 type TaskManagerClient interface {
 	SubmitTask(ctx context.Context, in *TaskRequest, opts ...grpc.CallOption) (*TaskResponse, error)
 	CheckTaskStatus(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusResponse, error)
+	StreamTaskStatus(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StatusResponse], error)
 }
 
 type taskManagerClient struct {
@@ -59,12 +63,34 @@ func (c *taskManagerClient) CheckTaskStatus(ctx context.Context, in *StatusReque
 	return out, nil
 }
 
+func (c *taskManagerClient) StreamTaskStatus(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StatusResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &TaskManager_ServiceDesc.Streams[0], TaskManager_StreamTaskStatus_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[StatusRequest, StatusResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type TaskManager_StreamTaskStatusClient = grpc.ServerStreamingClient[StatusResponse]
+
 // TaskManagerServer is the server API for TaskManager service.
 // All implementations must embed UnimplementedTaskManagerServer
 // for forward compatibility.
+//
+// Definicja serwisu
 type TaskManagerServer interface {
 	SubmitTask(context.Context, *TaskRequest) (*TaskResponse, error)
 	CheckTaskStatus(context.Context, *StatusRequest) (*StatusResponse, error)
+	StreamTaskStatus(*StatusRequest, grpc.ServerStreamingServer[StatusResponse]) error
 	mustEmbedUnimplementedTaskManagerServer()
 }
 
@@ -80,6 +106,9 @@ func (UnimplementedTaskManagerServer) SubmitTask(context.Context, *TaskRequest) 
 }
 func (UnimplementedTaskManagerServer) CheckTaskStatus(context.Context, *StatusRequest) (*StatusResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CheckTaskStatus not implemented")
+}
+func (UnimplementedTaskManagerServer) StreamTaskStatus(*StatusRequest, grpc.ServerStreamingServer[StatusResponse]) error {
+	return status.Errorf(codes.Unimplemented, "method StreamTaskStatus not implemented")
 }
 func (UnimplementedTaskManagerServer) mustEmbedUnimplementedTaskManagerServer() {}
 func (UnimplementedTaskManagerServer) testEmbeddedByValue()                     {}
@@ -138,6 +167,17 @@ func _TaskManager_CheckTaskStatus_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _TaskManager_StreamTaskStatus_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(StatusRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(TaskManagerServer).StreamTaskStatus(m, &grpc.GenericServerStream[StatusRequest, StatusResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type TaskManager_StreamTaskStatusServer = grpc.ServerStreamingServer[StatusResponse]
+
 // TaskManager_ServiceDesc is the grpc.ServiceDesc for TaskManager service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -154,6 +194,12 @@ var TaskManager_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _TaskManager_CheckTaskStatus_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "StreamTaskStatus",
+			Handler:       _TaskManager_StreamTaskStatus_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "proto/taskmanager.proto",
 }
