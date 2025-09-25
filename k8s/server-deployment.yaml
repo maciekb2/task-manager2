@@ -27,11 +27,15 @@ spec:
               cpu: "500m"
               memory: "512Mi"
           readinessProbe:
-            httpGet:
-              path: /
+            tcpSocket:
               port: 50051
             initialDelaySeconds: 5
             periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 50051
+            initialDelaySeconds: 15
+            periodSeconds: 20
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
