@@ -6,14 +6,23 @@ import (
 	"log"
 	"math/rand"
 	"net"
+	"net/http"
 	"sync"
 	"time"
 
-	pb "github.com/maciekb2/task-manager/proto" // Import wygenerowanego kodu z Protobuf
-
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	pb "github.com/maciekb2/task-manager/proto"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/jaeger"
+	"go.opentelemetry.io/otel/exporters/prometheus"
+	"go.opentelemetry.io/otel/sdk/resource"
+	tracesdk "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
 	"google.golang.org/grpc"
 )
 
+// task represents a single task with its properties.
 type task struct {
 	id          string
 	description string
@@ -21,6 +30,7 @@ type task struct {
 	status      string
 }
 
+// server is the gRPC server implementation for the TaskManager service.
 type server struct {
 	pb.UnimplementedTaskManagerServer
 	tasks       map[string]*task
@@ -28,6 +38,7 @@ type server struct {
 	subscribers map[string]chan string
 }
 
+// newServer creates a new server instance.
 func newServer() *server {
 	return &server{
 		tasks:       make(map[string]*task),
@@ -35,7 +46,8 @@ func newServer() *server {
 	}
 }
 
-// SubmitTask: Dodaje zadanie z priorytetem
+// SubmitTask adds a new task with a given priority.
+// It returns a TaskResponse with the new task's ID or an error.
 func (s *server) SubmitTask(ctx context.Context, req *pb.TaskRequest) (*pb.TaskResponse, error) {
 	taskID := fmt.Sprintf("%d", rand.Int())
 	task := &task{
@@ -52,13 +64,14 @@ func (s *server) SubmitTask(ctx context.Context, req *pb.TaskRequest) (*pb.TaskR
 	}
 	s.mu.Unlock()
 
-	// Asynchroniczne przetwarzanie zadania
+	// Asynchronously process the task.
 	go s.processTask(taskID)
 
 	return &pb.TaskResponse{TaskId: taskID}, nil
 }
 
-// CheckTaskStatus: Zwraca aktualny status zadania
+// CheckTaskStatus returns the current status of a task.
+// It returns a StatusResponse with the task's status or an error if the task is not found.
 func (s *server) CheckTaskStatus(ctx context.Context, req *pb.StatusRequest) (*pb.StatusResponse, error) {
 	s.mu.Lock()
 	task, exists := s.tasks[req.TaskId]
@@ -71,7 +84,8 @@ func (s *server) CheckTaskStatus(ctx context.Context, req *pb.StatusRequest) (*p
 	return &pb.StatusResponse{Status: task.status}, nil
 }
 
-// StreamTaskStatus: Wysyła status zadania w czasie rzeczywistym
+// StreamTaskStatus sends the status of a task in real-time.
+// It streams StatusResponse messages to the client.
 func (s *server) StreamTaskStatus(req *pb.StatusRequest, stream pb.TaskManager_StreamTaskStatusServer) error {
 	s.mu.Lock()
 	ch, exists := s.subscribers[req.TaskId]
@@ -91,6 +105,7 @@ func (s *server) StreamTaskStatus(req *pb.StatusRequest, stream pb.TaskManager_S
 	}
 	return nil
 }
+
 
 func (s *server) GetStatistics(ctx context.Context, req *pb.StatisticsRequest) (*pb.StatisticsResponse, error) {
 	s.mu.Lock()
@@ -112,17 +127,17 @@ func (s *server) GetStatistics(ctx context.Context, req *pb.StatisticsRequest) (
 	return stats, nil
 }
 
-// processTask: Symuluje przetwarzanie zadania
+// processTask simulates the processing of a task.
 func (s *server) processTask(taskID string) {
 	s.mu.Lock()
 	task := s.tasks[taskID]
 	s.mu.Unlock()
 
-	// Aktualizacja statusu na IN_PROGRESS
+	// Update status to IN_PROGRESS.
 	s.updateTaskStatus(taskID, "IN_PROGRESS")
-	time.Sleep(5 * time.Second) // Symulacja przetwarzania
+	time.Sleep(5 * time.Second) // Simulate processing time.
 
-	// Symulacja sukcesu lub porażki
+	// Simulate success or failure.
 	if rand.Float32() < 0.8 {
 		s.updateTaskStatus(taskID, "COMPLETED")
 	} else {
@@ -130,7 +145,7 @@ func (s *server) processTask(taskID string) {
 	}
 }
 
-// updateTaskStatus: Aktualizuje status zadania i powiadamia subskrybentów
+// updateTaskStatus updates the status of a task and notifies subscribers.
 func (s *server) updateTaskStatus(taskID, status string) {
 	s.mu.Lock()
 	if task, exists := s.tasks[taskID]; exists {
@@ -142,17 +157,65 @@ func (s *server) updateTaskStatus(taskID, status string) {
 	s.mu.Unlock()
 }
 
+// tracerProvider returns an OpenTelemetry TracerProvider configured to use
+// the Jaeger exporter.
+func tracerProvider(url string) (*tracesdk.TracerProvider, error) {
+	// Create the Jaeger exporter
+	exp, err := jaeger.New(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(url)))
+	if err != nil {
+		return nil, err
+	}
+	tp := tracesdk.NewTracerProvider(
+		// Always be sure to batch in production.
+		tracesdk.WithBatcher(exp),
+		// Record information about this application in a Resource.
+		tracesdk.WithResource(resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceName("taskmanager-server"),
+		)),
+	)
+	return tp, nil
+}
+
+// main is the entry point for the server application.
+// It initializes the gRPC server and starts listening for incoming connections.
 func main() {
-	// Inicjalizacja serwera
+	// Initialize the server.
 	lis, err := net.Listen("tcp", ":50051")
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
 
-	grpcServer := grpc.NewServer()
+	// Initialize OpenTelemetry
+	tp, err := tracerProvider("http://jaeger:14268/api/traces")
+	if err != nil {
+		log.Fatal(err)
+	}
+	otel.SetTracerProvider(tp)
+
+	// Create a new Prometheus exporter and register it as a provider.
+	exporter, err := prometheus.New()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Create a gRPC server with the OpenTelemetry interceptor.
+	grpcServer := grpc.NewServer(
+		grpc.UnaryInterceptor(otelgrpc.UnaryServerInterceptor()),
+		grpc.StreamInterceptor(otelgrpc.StreamServerInterceptor()),
+	)
 	pb.RegisterTaskManagerServer(grpcServer, newServer())
 
-	log.Println("Serwer gRPC działa na porcie :50051")
+	// Start a separate HTTP server for metrics and health checks.
+	go func() {
+		http.Handle("/metrics", promhttp.Handler())
+		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})
+		log.Fatal(http.ListenAndServe(":8080", nil))
+	}()
+
+	log.Println("gRPC server is running on port :50051")
 	if err := grpcServer.Serve(lis); err != nil {
 		log.Fatalf("failed to serve: %v", err)
 	}

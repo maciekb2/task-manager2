@@ -4,30 +4,40 @@ package taskmanager;
 
 option go_package = "github.com/maciekb2/task-manager/proto";
 
-// Definicja serwisu
+// TaskManager service definition.
 service TaskManager {
+  // Submits a new task to the task manager.
   rpc SubmitTask (TaskRequest) returns (TaskResponse);
+  // Checks the current status of a task.
   rpc CheckTaskStatus (StatusRequest) returns (StatusResponse);
-  rpc StreamTaskStatus (StatusRequest) returns (stream StatusResponse); // Strumieniowanie statusów
-  rpc GetStatistics(StatisticsRequest) returns (StatisticsResponse);
+  // Streams the status of a task in real-time.
+  rpc StreamTaskStatus (StatusRequest) returns (stream StatusResponse);
 }
 
-// Wiadomości
+// TaskRequest message represents a request to submit a new task.
 message TaskRequest {
+  // A description of the task to be performed.
   string task_description = 1;
-  string priority = 2; // "LOW", "MEDIUM", "HIGH"
+  // The priority of the task, can be "LOW", "MEDIUM", or "HIGH".
+  string priority = 2;
 }
 
+// TaskResponse message contains the ID of the submitted task.
 message TaskResponse {
+  // A unique identifier for the submitted task.
   string task_id = 1;
 }
 
+// StatusRequest message is used to request the status of a task.
 message StatusRequest {
+  // The ID of the task to check.
   string task_id = 1;
 }
 
+// StatusResponse message contains the current status of a task.
 message StatusResponse {
-  string status = 1; // "QUEUED", "IN_PROGRESS", "COMPLETED", "FAILED"
+  // The current status of the task, can be "QUEUED", "IN_PROGRESS", "COMPLETED", or "FAILED".
+  string status = 1;
 }
 
 message StatisticsRequest {}
