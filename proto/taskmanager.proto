@@ -9,6 +9,7 @@ service TaskManager {
   rpc SubmitTask (TaskRequest) returns (TaskResponse);
   rpc CheckTaskStatus (StatusRequest) returns (StatusResponse);
   rpc StreamTaskStatus (StatusRequest) returns (stream StatusResponse); // Strumieniowanie statusów
+  rpc GetStatistics(StatisticsRequest) returns (StatisticsResponse);
 }
 
 // Wiadomości
@@ -27,4 +28,13 @@ message StatusRequest {
 
 message StatusResponse {
   string status = 1; // "QUEUED", "IN_PROGRESS", "COMPLETED", "FAILED"
+}
+
+message StatisticsRequest {}
+
+message StatisticsResponse {
+  int32 queued = 1;
+  int32 in_progress = 2;
+  int32 completed = 3;
+  int32 failed = 4;
 }
