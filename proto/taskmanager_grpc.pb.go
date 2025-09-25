@@ -22,6 +22,7 @@ const (
 	TaskManager_SubmitTask_FullMethodName       = "/taskmanager.TaskManager/SubmitTask"
 	TaskManager_CheckTaskStatus_FullMethodName  = "/taskmanager.TaskManager/CheckTaskStatus"
 	TaskManager_StreamTaskStatus_FullMethodName = "/taskmanager.TaskManager/StreamTaskStatus"
+	TaskManager_GetStatistics_FullMethodName    = "/taskmanager.TaskManager/GetStatistics"
 )
 
 // TaskManagerClient is the client API for TaskManager service.
@@ -33,6 +34,7 @@ type TaskManagerClient interface {
 	SubmitTask(ctx context.Context, in *TaskRequest, opts ...grpc.CallOption) (*TaskResponse, error)
 	CheckTaskStatus(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusResponse, error)
 	StreamTaskStatus(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StatusResponse], error)
+	GetStatistics(ctx context.Context, in *StatisticsRequest, opts ...grpc.CallOption) (*StatisticsResponse, error)
 }
 
 type taskManagerClient struct {
@@ -79,6 +81,16 @@ func (c *taskManagerClient) StreamTaskStatus(ctx context.Context, in *StatusRequ
 	return x, nil
 }
 
+func (c *taskManagerClient) GetStatistics(ctx context.Context, in *StatisticsRequest, opts ...grpc.CallOption) (*StatisticsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StatisticsResponse)
+	err := c.cc.Invoke(ctx, TaskManager_GetStatistics_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type TaskManager_StreamTaskStatusClient = grpc.ServerStreamingClient[StatusResponse]
 
@@ -91,6 +103,7 @@ type TaskManagerServer interface {
 	SubmitTask(context.Context, *TaskRequest) (*TaskResponse, error)
 	CheckTaskStatus(context.Context, *StatusRequest) (*StatusResponse, error)
 	StreamTaskStatus(*StatusRequest, grpc.ServerStreamingServer[StatusResponse]) error
+	GetStatistics(context.Context, *StatisticsRequest) (*StatisticsResponse, error)
 	mustEmbedUnimplementedTaskManagerServer()
 }
 
@@ -109,6 +122,9 @@ func (UnimplementedTaskManagerServer) CheckTaskStatus(context.Context, *StatusRe
 }
 func (UnimplementedTaskManagerServer) StreamTaskStatus(*StatusRequest, grpc.ServerStreamingServer[StatusResponse]) error {
 	return status.Errorf(codes.Unimplemented, "method StreamTaskStatus not implemented")
+}
+func (UnimplementedTaskManagerServer) GetStatistics(context.Context, *StatisticsRequest) (*StatisticsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetStatistics not implemented")
 }
 func (UnimplementedTaskManagerServer) mustEmbedUnimplementedTaskManagerServer() {}
 func (UnimplementedTaskManagerServer) testEmbeddedByValue()                     {}
@@ -181,6 +197,24 @@ type TaskManager_StreamTaskStatusServer = grpc.ServerStreamingServer[StatusRespo
 // TaskManager_ServiceDesc is the grpc.ServiceDesc for TaskManager service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
+func _TaskManager_GetStatistics_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StatisticsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TaskManagerServer).GetStatistics(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TaskManager_GetStatistics_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TaskManagerServer).GetStatistics(ctx, req.(*StatisticsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var TaskManager_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "taskmanager.TaskManager",
 	HandlerType: (*TaskManagerServer)(nil),
@@ -192,6 +226,10 @@ var TaskManager_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CheckTaskStatus",
 			Handler:    _TaskManager_CheckTaskStatus_Handler,
+		},
+		{
+			MethodName: "GetStatistics",
+			Handler:    _TaskManager_GetStatistics_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

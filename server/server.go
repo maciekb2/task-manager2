@@ -106,6 +106,27 @@ func (s *server) StreamTaskStatus(req *pb.StatusRequest, stream pb.TaskManager_S
 	return nil
 }
 
+
+func (s *server) GetStatistics(ctx context.Context, req *pb.StatisticsRequest) (*pb.StatisticsResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	stats := &pb.StatisticsResponse{}
+	for _, task := range s.tasks {
+		switch task.status {
+		case "QUEUED":
+			stats.Queued++
+		case "IN_PROGRESS":
+			stats.InProgress++
+		case "COMPLETED":
+			stats.Completed++
+		case "FAILED":
+			stats.Failed++
+		}
+	}
+	return stats, nil
+}
+
 // processTask simulates the processing of a task.
 func (s *server) processTask(taskID string) {
 	s.mu.Lock()

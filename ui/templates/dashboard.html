@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task Manager Dashboard</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 2em;
+        }
+        .stats {
+            display: flex;
+            gap: 2em;
+            margin-bottom: 2em;
+        }
+        .stat {
+            padding: 1em;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        .stat h2 {
+            margin-top: 0;
+        }
+        form {
+            display: flex;
+            flex-direction: column;
+            width: 300px;
+        }
+        form label {
+            margin-bottom: 0.5em;
+        }
+        form input, form select {
+            margin-bottom: 1em;
+            padding: 0.5em;
+        }
+    </style>
+</head>
+<body>
+    <h1>Task Manager Dashboard</h1>
+
+    <div class="stats">
+        <div class="stat">
+            <h2>Queued</h2>
+            <p>{{.Queued}}</p>
+        </div>
+        <div class="stat">
+            <h2>In Progress</h2>
+            <p>{{.InProgress}}</p>
+        </div>
+        <div class="stat">
+            <h2>Completed</h2>
+            <p>{{.Completed}}</p>
+        </div>
+        <div class="stat">
+            <h2>Failed</h2>
+            <p>{{.Failed}}</p>
+        </div>
+    </div>
+
+    <h2>Submit New Task</h2>
+    <form action="/submit" method="post">
+        <label for="description">Description:</label>
+        <input type="text" id="description" name="description" required>
+
+        <label for="priority">Priority:</label>
+        <select id="priority" name="priority">
+            <option value="LOW">Low</option>
+            <option value="MEDIUM">Medium</option>
+            <option value="HIGH">High</option>
+        </select>
+
+        <button type="submit">Submit</button>
+    </form>
+</body>
+</html>

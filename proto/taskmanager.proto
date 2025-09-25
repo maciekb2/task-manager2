@@ -39,3 +39,12 @@ message StatusResponse {
   // The current status of the task, can be "QUEUED", "IN_PROGRESS", "COMPLETED", or "FAILED".
   string status = 1;
 }
+
+message StatisticsRequest {}
+
+message StatisticsResponse {
+  int32 queued = 1;
+  int32 in_progress = 2;
+  int32 completed = 3;
+  int32 failed = 4;
+}
