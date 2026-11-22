@@ -28,6 +28,9 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	if os.Getenv("LAB_PROOF_MODE") == "delete-consumer" {
+		return js.DeleteConsumer("TASKS", "workers")
+	}
 	if os.Getenv("LAB_PROOF_MODE") == "entry" {
 		var event struct {
 			ID   string    `json:"id"`

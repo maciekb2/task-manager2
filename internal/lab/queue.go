@@ -14,30 +14,42 @@ import (
 )
 
 func (a *App) consume(ctx context.Context) {
-	sub, err := a.bus.js.PullSubscribe("tasks.queue", "workers", nats.Bind("TASKS", "workers"))
-	if err != nil {
-		fmt.Println("consumer subscribe", err)
-		return
-	}
-	defer sub.Unsubscribe()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
+	setReady := func(ready bool) { a.mu.Lock(); a.consumerReady = ready; a.mu.Unlock() }
+	defer setReady(false)
+	for ctx.Err() == nil {
+		_, err := a.bus.js.AddConsumer("TASKS", &nats.ConsumerConfig{Durable: "workers", FilterSubject: "tasks.queue", AckPolicy: nats.AckExplicitPolicy, AckWait: 20 * time.Second, MaxAckPending: 50})
+		var sub *nats.Subscription
+		if err == nil {
+			sub, err = a.bus.js.PullSubscribe("tasks.queue", "workers", nats.Bind("TASKS", "workers"))
 		}
-		messages, err := sub.Fetch(1, nats.MaxWait(time.Second))
 		if err != nil {
-			if err != nats.ErrTimeout {
-				fmt.Println("fetch", err)
+			fmt.Println("consumer subscribe", err)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(time.Second):
 			}
 			continue
 		}
-		for _, msg := range messages {
-			a.processMessage(ctx, msg)
+		setReady(true)
+		for ctx.Err() == nil {
+			messages, err := sub.Fetch(1, nats.MaxWait(time.Second))
+			if err != nil {
+				if errors.Is(err, nats.ErrTimeout) {
+					continue
+				}
+				fmt.Println("consumer fetch; rebinding", err)
+				break
+			}
+			for _, msg := range messages {
+				a.processMessage(ctx, msg)
+			}
 		}
+		setReady(false)
+		_ = sub.Unsubscribe()
 	}
 }
+
 func (a *App) processMessage(ctx context.Context, msg *nats.Msg) {
 	var t Task
 	if json.Unmarshal(msg.Data, &t) != nil {
@@ -116,6 +128,7 @@ func (a *App) queueState() Object {
 	}
 	if s, e := a.bus.js.StreamInfo("DLQ"); e == nil {
 		result["dead_letters"] = s.State.Msgs
+		result["dlq_observed"] = true
 	}
 	if keys, e := a.bus.tasks.Keys(); e == nil {
 		sort.Sort(sort.Reverse(sort.StringSlice(keys)))

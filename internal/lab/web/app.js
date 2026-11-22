@@ -3,7 +3,7 @@ const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let state = null, token = '', selected = '', trace = '', busy = false, toastTimer;
 const editable = new Set(['generator','gateway','validator','enricher','echo','consumer','result-store']);
-const positions = {web:[105,65],control:[325,65],observer:[545,65],jaeger:[705,65],'result-store':[875,65],generator:[105,265],gateway:[300,265],validator:[495,265],enricher:[690,265],echo:[885,265],job:[105,465],nats:[495,465],consumer:[885,465]};
+const positions = {web:[105,65],control:[325,65],observer:[545,65],jaeger:[705,65],'result-store':[875,65],generator:[105,265],gateway:[300,265],validator:[495,265],enricher:[690,265],echo:[885,265],job:[105,465],nats:[495,465],consumer:[885,465],'dead-letter':[885,595]};
 const titles = {jaeger:'Jaeger',web:'Web UI',control:'Control API',observer:'Observer',generator:'Traffic generator',gateway:'Gateway',validator:'Validator',enricher:'Enricher',echo:'HTTP worker',nats:'NATS JetStream',consumer:'Queue consumer','result-store':'Result store',job:'Jobs / CronJobs','dead-letter':'Dead-letter'};
 const colors = {web:'#88a5f2',control:'#88a5f2',observer:'#88a5f2',generator:'#6fe5bd',gateway:'#6fe5bd',validator:'#6fe5bd',enricher:'#6fe5bd',echo:'#6fe5bd',nats:'#f0bc6a',consumer:'#f0bc6a','result-store':'#b99df6',job:'#f0bc6a'};
 function notify(message, error=false) { $('toast').textContent=message; $('toast').className='show'+(error?' error':''); clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').className='',6000); }
@@ -24,10 +24,23 @@ function switchTab(tab) {
 window.addEventListener('popstate',()=>switchTab(location.hash.slice(1)||'portfolio'));
 document.querySelectorAll('[data-tab]').forEach(e=>e.addEventListener('click',()=>switchTab(e.dataset.tab)));
 for(const name of ['rps','concurrency']) $(name).addEventListener('input',()=>$(name+'Value').value=$(name).value);
+const trafficInputs={payload_bytes:'payload',rps:'rps',concurrency:'concurrency',delay_ms:'delay',error_percent:'errors',cpu_ms:'cpu',duration_seconds:'duration'};
+const trafficDirty=new Set();
+for(const input of Object.values(trafficInputs))$(input).addEventListener('input',()=>{trafficDirty.add(input);syncTrafficForm();});
+function syncTrafficForm(){
+ if(!state)return;
+ for(const [key,input] of Object.entries(trafficInputs)){
+  if(trafficDirty.has(input)||document.activeElement===$(input))continue;
+  const value=state.config[key];
+  if(value!==undefined&&(key!=='duration_seconds'||value>0))$(input).value=value;
+ }
+ for(const name of ['rps','concurrency'])$(name+'Value').value=$(name).value;
+ $('trafficDraft').textContent=trafficDirty.size?'Szkic zmian — jeszcze niezastosowany. Stop zatrzymuje aktualną konfigurację.':'Konfiguracja z klastra. Czas dotyczy następnego uruchomienia; odliczanie pokazuje stan bieżący.';
+}
 function values() {return {payload_bytes:+$('payload').value,rps:+$('rps').value,concurrency:+$('concurrency').value,delay_ms:+$('delay').value,error_percent:+$('errors').value,cpu_ms:+$('cpu').value,duration_seconds:+$('duration').value};}
-async function configure(config) {try{await request('/api/config',config);notify(config.rps?'Eksperyment uruchomiony. Obserwuj rzeczywisty ruch.':'Generator zatrzymany. Żądania już przyjęte kończą pracę.');await refresh();}catch(e){notify(e.message,true);}}
+async function configure(config) {try{await request('/api/config',config);trafficDirty.clear();notify(config.rps?'Eksperyment uruchomiony. Obserwuj rzeczywisty ruch.':'Generator zatrzymany. Żądania już przyjęte kończą pracę.');await refresh();}catch(e){notify(e.message,true);}}
 $('trafficForm').addEventListener('submit',e=>{e.preventDefault();configure(values());});
-$('stopTraffic').addEventListener('click',()=>configure({...values(),rps:0}));
+$('stopTraffic').addEventListener('click',async()=>{try{await request('/api/config',{...state.config,rps:0});await refresh();notify('Zatrzymano ruch. Szkic pozostaje niezastosowany.');}catch(e){notify(e.message,true);}});
 const scenarios={normal:{rps:5,concurrency:4,delay_ms:40,error_percent:0,cpu_ms:0},slow:{rps:10,concurrency:12,delay_ms:800,error_percent:0,cpu_ms:0},errors:{rps:5,concurrency:4,delay_ms:40,error_percent:50,cpu_ms:0},cpu:{rps:20,concurrency:12,delay_ms:0,error_percent:0,cpu_ms:40}};
 document.querySelectorAll('[data-scenario]').forEach(button=>button.addEventListener('click',()=>{const c=scenarios[button.dataset.scenario];for(const [key,input] of Object.entries({rps:'rps',concurrency:'concurrency',delay_ms:'delay',error_percent:'errors',cpu_ms:'cpu'}))$(input).value=c[key];$('rpsValue').value=c.rps;$('concurrencyValue').value=c.concurrency;configure({...c,payload_bytes:+$('payload').value,duration_seconds:+$('duration').value});}));
 $('reset').addEventListener('click',()=>act({action:'reset'},'Przywrócono konfigurację, repliki i wstrzymano CronJob. Historia pozostała.'));
@@ -72,12 +85,13 @@ function renderGraph() {
   $('graphObservedLegend').textContent=$('graphMetric').value==='transfer'?'Payload / 30 s · strzałka HTTP: odpowiedź wraca do klienta':'Liczba przejść / 30 s · animacja: ruch w ostatnich 5 s';
   const nodes=deployments().map(d=>({...d,id:d.component||d.name}));
   if((state.cluster?.cronjobs||[]).length) nodes.push({id:'job',name:'job',ready:(state.cluster?.jobs||[]).filter(j=>j.succeeded>0).length,replicas:(state.cluster?.jobs||[]).length});
+  if(state.queue?.dlq_observed)nodes.push({id:'dead-letter',name:'DLQ'});
   const simple=$('graphScope').value==='flow';if(simple){for(let i=nodes.length-1;i>=0;i--)if(!['generator','gateway','validator','enricher','echo'].includes(nodes[i].id))nodes.splice(i,1);}const present=new Set(nodes.map(n=>n.id));
   nodes.forEach((n,i)=>{if(!positions[n.id])positions[n.id]=[105+(i%5)*195,565+Math.floor(i/5)*100];});
   const edgeMap=new Map();
   if($('declared').checked) for(const node of nodes) for(const to of node.dependencies||[]) if(to&&present.has(to))edgeMap.set(`${node.id}→${to}`,{from:node.id,to,count:0});
-  for(const e of Object.values(state.edges||{})) {const to=e.to==='dead-letter'?'nats':e.to;if(present.has(e.from)&&present.has(to)&&e.from!==to)edgeMap.set(`${e.from}→${to}`,{...e,to});}
-  let svg='<svg viewBox="'+(simple?'0 175 1000 180':'0 0 1000 535')+'" role="group" aria-label="Wykryte mikroserwisy i ich połączenia"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#657b8d"/></marker></defs>';
+  for(const e of Object.values(state.edges||{})) {const to=e.to;if(present.has(e.from)&&present.has(to)&&e.from!==to)edgeMap.set(`${e.from}→${to}`,{...e,to});}
+  let svg='<svg viewBox="'+(simple?'0 175 1000 180':'0 0 1000 655')+'" role="group" aria-label="Wykryte mikroserwisy i ich połączenia"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#657b8d"/></marker></defs>';
   svg+='<g data-key="edges">';
   for(const edge of edgeMap.values()) {
     const p=positions[edge.from],q=positions[edge.to];if(!p||!q)continue;
@@ -91,7 +105,7 @@ function renderGraph() {
     svg+='</g>';
   }
   svg+='</g><g data-key="nodes">';
-  for(const n of nodes) {const p=positions[n.id],healthy=n.id==='job'||(n.ready>=n.replicas&&n.replicas>0),color=colors[n.id]||'#6dacf5';svg+=`<g data-key="${esc(n.id)}" class="node ${selected===n.id?'selected':''}" data-node="${esc(n.id)}" role="button" tabindex="0" aria-label="${esc(titles[n.id]||n.name)}" transform="translate(${p[0]-77},${p[1]-31})"><rect width="154" height="62" rx="9"/><circle cx="14" cy="18" r="3.5" fill="${healthy?color:'#f7868b'}"/><text class="node-name" x="25" y="23">${esc(titles[n.id]||n.name)}</text><text class="node-type" x="14" y="45">${n.id==='job'?`${n.ready} zakończone / ${n.replicas} zadań`:`${n.ready||0} / ${n.replicas||0} ready · :${n.id==='nats'?'4222':'8080'}`}</text></g>`;}
+  for(const n of nodes) {const p=positions[n.id],healthy=n.id==='job'||n.id==='dead-letter'||(n.ready>=n.replicas&&n.replicas>0),color=colors[n.id]||'#6dacf5';svg+=`<g data-key="${esc(n.id)}" class="node ${selected===n.id?'selected':''}" data-node="${esc(n.id)}" role="button" tabindex="0" aria-label="${esc(titles[n.id]||n.name)}" transform="translate(${p[0]-77},${p[1]-31})"><rect width="154" height="62" rx="9"/><circle cx="14" cy="18" r="3.5" fill="${healthy?color:'#f7868b'}"/><text class="node-name" x="25" y="23">${esc(titles[n.id]||n.name)}</text><text class="node-type" x="14" y="45">${n.id==='dead-letter'?`${state.queue.dead_letters} wiadomości · stream DLQ`:n.id==='job'?`${n.ready} zakończone / ${n.replicas} zadań`:`${n.ready||0} / ${n.replicas||0} ready · :${n.id==='nats'?'4222':'8080'}`}</text></g>`;}
   const template=document.createElement('template');template.innerHTML=svg+'</g></svg>';patchSVG($('graph'),template.content);
 
 }
@@ -104,7 +118,7 @@ setInterval(()=>{if(document.hidden||!$('view-map').classList.contains('active')
 $('graph').addEventListener('click',chooseNode);$('graph').addEventListener('keydown',chooseNode);
 function renderInspector() {
   if(!selected)return;const node=deployments().find(d=>(d.component||d.name)===selected);const pods=podList(selected);const panel=$('inspector');panel.classList.add('has-selection');
-  let content=`<div class="section-label">SERVICE INSPECTOR</div><h3>${esc(titles[selected]||selected)}</h3><p class="muted">${esc(node?.description||'Jednorazowe i cykliczne wykonania kontrolowane przez Kubernetes.')}</p>`;
+  let content=`<div class="section-label">SERVICE INSPECTOR</div><h3>${esc(titles[selected]||selected)}</h3><p class="muted">${esc(node?.description||(selected==='dead-letter'?'Stream JetStream tasks.dlq. Trafiają tu zadania po wyczerpaniu prób; to zasób brokera, bez osobnych podów.':'Jednorazowe i cykliczne wykonania kontrolowane przez Kubernetes.'))}</p>`;
   if(node)content+=`<p class="muted">Deployment: ${esc(node.name)}<br>Gotowe repliki: ${node.ready||0} / ${node.replicas||0}<br>Zależności: ${esc((node.dependencies||[]).filter(Boolean).join(', ')||'Kubernetes API')}</p>`;
   if(selected==='generator')content+='<p class="muted">Jedna replika generatora utrzymuje wspólny limit ruchu eksperymentu. Skaluj usługi obsługujące żądania.</p>';
   if(editable.has(selected)&&selected!=='generator')content+=`<form id="scaleForm" class="field-pair"><div><label for="replicaCount">Liczba replik</label><input id="replicaCount" type="number" min="0" max="5" value="${node?.replicas||0}" required></div><button class="secondary">Zastosuj</button></form>`;
@@ -121,6 +135,7 @@ $('closeLogs').addEventListener('click',()=>$('logDialog').close());
 async function renderTrace(id) {trace=id;try{const events=await request('/api/trace?id='+encodeURIComponent(id));$('traceView').innerHTML=`<button class="secondary" id="fullTrace">Otwórz pełny trace OpenTelemetry →</button>`+`<div class="trace-id">${esc(id)}</div>`+events.map(e=>`<div class="trace-row"><span>${esc(e.from)} → ${esc(e.to)}</span><span class="code ${e.status>=400?'bad':''}">${e.status||e.kind} · ${e.duration_ms.toFixed(1)} ms</span><small>${esc(e.message||e.operation||e.target_pod||e.pod)}${e.attempt?' · próba '+e.attempt:''}</small></div>`).join('');$('fullTrace').onclick=()=>window.showPerformanceTrace?.(id);}catch(e){notify(e.message,true);}}
 function render() {
   const c=state.cluster,config=state.config,m=state.metrics,queue=state.queue,pods=c?.pods||[];
+  syncTrafficForm();
   const stale=!c||Date.now()-Date.parse(c.at)>20000;
   $('connectionDot').className='status-dot'+(!stale?' connected':'');$('connection').textContent=stale?'Odkrywanie klastra / dane nieaktualne':'Połączono · systems-lab';$('clusterVersion').textContent=c?.version||'Minikube';
   markup('metricRPS',`${m.rps.toFixed(1)}<small>req/s</small>`);$('metricRequests').textContent=`${m.requests} żądań w ostatnich 30 s`;markup('metricLatency',`${m.p95_ms.toFixed(0)}<small>ms</small>`);markup('metricErrors',`${m.requests?(100*m.errors/m.requests).toFixed(0):0}<small>%</small>`);$('metricPods').textContent=`${pods.filter(p=>p.phase==='Running'&&p.ready===p.containers).length} / ${pods.filter(p=>p.phase!=='Succeeded'&&p.phase!=='Failed').length}`;$('metricNode').textContent=`${c?.nodes?.length||0} węzeł · ${(c?.deployments||[]).length} deploymentów`;

@@ -43,6 +43,8 @@ jobs:
         run: python3 scripts/config-rollout-smoke.py
       - name: Duplicate delivery and durable outcome replay
         run: python3 scripts/durability-smoke.py
+      - name: Configured startup and subscription recovery
+        run: python3 scripts/readiness-smoke.py
       - name: Actual image update and rollback
         run: python3 scripts/release-smoke.py
       - name: Report local development acceptance
