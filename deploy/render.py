@@ -131,7 +131,7 @@ def pod_spec(role):
             "securityContext": {"allowPrivilegeEscalation": False, "readOnlyRootFilesystem": True, "capabilities": {"drop": ["ALL"]}},
             "resources": {"requests": {"cpu": "20m", "memory": "32Mi"}, "limits": {"cpu": "500m", "memory": "256Mi"}},
             "readinessProbe": {"httpGet": {"path": "/healthz", "port": 8080}, "periodSeconds": 3},
-            "livenessProbe": {"httpGet": {"path": "/healthz", "port": 8080}, "initialDelaySeconds": 120, "periodSeconds": 10}}]}
+            "livenessProbe": {"httpGet": {"path": "/livez", "port": 8080}, "initialDelaySeconds": 120, "periodSeconds": 10}}]}
 
 for role, (deps, description) in roles.items():
     labels = dict(LABELS, **{"app.kubernetes.io/component": role})

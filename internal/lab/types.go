@@ -17,14 +17,16 @@ const Namespace = "systems-lab"
 const ManagedLabel = "app.kubernetes.io/part-of=systems-lab"
 
 type Config struct {
-	ReleaseUntil float64 `json:"release_until"`
-	PayloadBytes int     `json:"payload_bytes"`
-	RPS          int     `json:"rps"`
-	Concurrency  int     `json:"concurrency"`
-	DelayMS      int     `json:"delay_ms"`
-	ErrorPercent int     `json:"error_percent"`
-	CPUMS        int     `json:"cpu_ms"`
-	RunUntil     float64 `json:"run_until"`
+	ReleaseChangedAt float64 `json:"release_changed_at"`
+	DurationSeconds  int     `json:"duration_seconds"`
+	ReleaseUntil     float64 `json:"release_until"`
+	PayloadBytes     int     `json:"payload_bytes"`
+	RPS              int     `json:"rps"`
+	Concurrency      int     `json:"concurrency"`
+	DelayMS          int     `json:"delay_ms"`
+	ErrorPercent     int     `json:"error_percent"`
+	CPUMS            int     `json:"cpu_ms"`
+	RunUntil         float64 `json:"run_until"`
 }
 
 func DefaultConfig() Config { return Config{Concurrency: 4, DelayMS: 40} }
@@ -87,6 +89,7 @@ type App struct {
 	actionMu      sync.Mutex
 	cluster       Object
 	actionToken   string
+	consumerReady bool
 	perf          *Observatory
 }
 
@@ -157,4 +160,43 @@ func (a *App) getConfig() Config {
 		a.configLoading = false
 	}()
 	return c
+}
+
+// New data-plane pods must observe the persisted scenario before accepting work.
+// Later refreshes stay asynchronous so a control outage does not stall requests.
+func (a *App) fetchConfig(ctx context.Context) (Config, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", "http://control:8080/internal/config", nil)
+	if err != nil {
+		return Config{}, err
+	}
+	resp, err := a.http.Do(req)
+	if err != nil {
+		return Config{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return Config{}, fmt.Errorf("config HTTP %d", resp.StatusCode)
+	}
+	var c Config
+	err = json.NewDecoder(io.LimitReader(resp.Body, 8192)).Decode(&c)
+	return c, err
+}
+func (a *App) loadInitialConfig(ctx context.Context) error {
+	for {
+		attempt, cancel := context.WithTimeout(ctx, time.Second)
+		c, err := a.fetchConfig(attempt)
+		cancel()
+		if err == nil {
+			a.mu.Lock()
+			a.config = c
+			a.configAt = time.Now()
+			a.mu.Unlock()
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
+	}
 }

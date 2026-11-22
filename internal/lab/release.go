@@ -51,17 +51,18 @@ func (k *Kube) releaseEcho(candidate bool) (string, error) {
 }
 func (a *App) changeRelease(candidate bool) (string, error) {
 	c := a.getConfig()
+	c.ReleaseChangedAt = unixSeconds(time.Now())
 	if candidate {
 		// Persist recovery intent before changing the deployment, including across a
 		// control restart. The interval bounds this intentionally broken business path.
 		c.ReleaseUntil = unixSeconds(time.Now().Add(60 * time.Second))
-		if err := a.kube.saveConfig(c); err != nil {
-			return "", err
-		}
-		a.mu.Lock()
-		a.config = c
-		a.mu.Unlock()
 	}
+	if err := a.kube.saveConfig(c); err != nil {
+		return "", err
+	}
+	a.mu.Lock()
+	a.config = c
+	a.mu.Unlock()
 	image, err := a.kube.releaseEcho(candidate)
 	if err != nil {
 		return "", err

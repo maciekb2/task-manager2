@@ -250,3 +250,28 @@ persisted trace outcome, rather than equating task completion with storage proof
 The affected local config-restart → durability sequence passed with that wait.
 The original failed run remains visible:
 [45063952285](https://github.com/maciekb2/task-manager2/actions/runs/45063952285).
+
+### Review corrections (2026-11-22)
+
+New echo/generator processes load persisted configuration before listening.
+Consumer readiness reflects a bound subscription; a deleted durable is recreated
+and rebound without replacing the process. Liveness has its separate endpoint.
+Job execution spans preserve upstream HTTP failure codes. Release evidence uses
+the action boundary and a responding pod of the desired image. The graph shows an
+observed DLQ stream separately from retries; traffic controls follow live config
+and preserve explicitly labelled drafts. Stop applies only to the live scenario.
+
+Local: race tests passed; readiness acceptance proved new pods under 100% failure
+and processing after actual durable deletion by the same consumer UID/restart
+count. The first probe incorrectly required both Service backends to receive
+traffic (HTTP connection reuse does not guarantee that); corrected to require an
+actual new backend response and reject observed 200s. Browser acceptance verified
+live/draft reconciliation, Stop semantics and DLQ discovery/inspector. Deployed
+source for those checks: `22ace94559fb9622`. A subsequent small persistence-order
+correction for the release boundary is subject to the next canonical CI run.
+
+Hosted CI `45066294325` passed all first-release checks, including actual faulty
+image, manual rollback and timed rollback after controller restart, at `fe96a4c`:
+https://github.com/maciekb2/task-manager2/actions/runs/45066294325 . This result does
+not certify later source. HTTP outcome replay capacity remains explicitly bounded
+as documented in decisions/004; a dedicated retention path is deferred to stage 4.

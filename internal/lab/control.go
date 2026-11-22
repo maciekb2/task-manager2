@@ -187,18 +187,17 @@ func (a *App) startControl(ctx context.Context, mux *http.ServeMux) error {
 		}
 		var v struct {
 			Config
-			Duration int `json:"duration_seconds"`
 		}
 		if e := decode(w, r, &v); e != nil {
 			fail(w, e)
 			return
 		}
 		if v.RPS > 0 {
-			if v.Duration < 1 || v.Duration > 300 {
+			if v.DurationSeconds < 1 || v.DurationSeconds > 300 {
 				fail(w, fmt.Errorf("duration 1–300 s"))
 				return
 			}
-			v.RunUntil = unixSeconds(time.Now().Add(time.Duration(v.Duration) * time.Second))
+			v.RunUntil = unixSeconds(time.Now().Add(time.Duration(v.DurationSeconds) * time.Second))
 		} else {
 			v.RunUntil = 0
 		}
@@ -209,6 +208,7 @@ func (a *App) startControl(ctx context.Context, mux *http.ServeMux) error {
 		a.actionMu.Lock()
 		defer a.actionMu.Unlock()
 		v.ReleaseUntil = a.getConfig().ReleaseUntil
+		v.ReleaseChangedAt = a.getConfig().ReleaseChangedAt
 		if e := a.kube.saveConfig(v.Config); e != nil {
 			fail(w, e)
 			return

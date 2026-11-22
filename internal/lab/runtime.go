@@ -37,7 +37,17 @@ func Run() error {
 		_ = shutdownTrace(flush)
 	}()
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, Object{"status": "ok", "role": role}) })
+	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, Object{"status": "ok"}) })
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		a.mu.RLock()
+		ready := role != "consumer" || a.consumerReady
+		a.mu.RUnlock()
+		if !ready {
+			writeJSON(w, 503, Object{"status": "waiting for queue subscription", "role": role})
+			return
+		}
+		writeJSON(w, 200, Object{"status": "ok", "role": role})
+	})
 	if role == "web" {
 		target, _ := url.Parse("http://control:8080")
 		proxy := httputil.NewSingleHostReverseProxy(target)
@@ -71,6 +81,11 @@ func Run() error {
 		} else {
 			if err = a.bus.readyTasks(); err != nil {
 				return err
+			}
+			if role == "echo" || role == "generator" {
+				if err = a.loadInitialConfig(ctx); err != nil {
+					return err
+				}
 			}
 			switch role {
 			case "observer":
@@ -301,6 +316,7 @@ func (a *App) runJob(ctx context.Context) error {
 		a.emit(Event{Trace: trace, From: "job", To: "job", Kind: "job", Status: 500, Message: "Kontrolowana awaria procesu Job"})
 		return fmt.Errorf("kontrolowana awaria zadania demonstracyjnego")
 	}
+	outcome = status
 	if err != nil {
 		return err
 	}
