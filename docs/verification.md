@@ -241,3 +241,12 @@ Recovery intent is persisted before deploying the candidate and expires after 60
 
 Hosted CI for this later increment is recorded when available. The foundation CI
 receipt above is not misrepresented as acceptance of these new release controls.
+
+Portfolio CI at `7e3026a` passed the earlier bootstrap/core/observability/network/
+outage/config checks but stopped in the durability fixture: it assumed a new HTTP
+outcome would be present after one second. The result store is asynchronous and
+was catching up after broker reconfiguration. The fixture now waits for the exact
+persisted trace outcome, rather than equating task completion with storage proof.
+The affected local config-restart → durability sequence passed with that wait.
+The original failed run remains visible:
+[45063952285](https://github.com/maciekb2/task-manager2/actions/runs/45063952285).

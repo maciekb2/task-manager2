@@ -21,8 +21,13 @@ while time.monotonic()<end:
  if task and task['state']=='completed':break
  time.sleep(.5)
 else:raise AssertionError('proof task did not finish')
+end=time.monotonic()+60
+while time.monotonic()<end:
+ event=next((e for e in api('/api/results') if e['trace']==task['trace']),None)
+ if event:break
+ time.sleep(.5)
+else:raise AssertionError('asynchronous HTTP outcome was not actually persisted')
 time.sleep(1)
-event=next(e for e in api('/api/results') if e['trace']==task['trace'])
 env=dict(os.environ,GOTOOLCHAIN='go1.26.0')
 env['LAB_PROOF_TOKEN']=base64.b64decode(k('get','secret','lab-nats','-o','jsonpath={.data.token}')).decode()
 forward=subprocess.Popen(K+['port-forward','service/nats','18089:4222','--address=127.0.0.1'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
