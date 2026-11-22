@@ -28,6 +28,26 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	if os.Getenv("LAB_PROOF_MODE") == "kv-drift" || os.Getenv("LAB_PROOF_MODE") == "kv-config" {
+		info, err := js.StreamInfo("KV_lab-results")
+		if err != nil {
+			return err
+		}
+		if os.Getenv("LAB_PROOF_MODE") == "kv-drift" {
+			next := info.Config
+			next.MaxAge = 48 * time.Hour
+			next.MaxBytes = 16 << 20
+			next.MaxMsgsPerSubject = 2
+			if _, err = js.UpdateStream(&next); err != nil {
+				return err
+			}
+			return nil
+		}
+		if info.Config.MaxAge != 24*time.Hour || info.Config.MaxBytes != 8<<20 || info.Config.MaxMsgsPerSubject != 1 {
+			return fmt.Errorf("task bucket configuration not reconciled")
+		}
+		return json.NewEncoder(os.Stdout).Encode(map[string]any{"ttl_hours": 24, "max_bytes": info.Config.MaxBytes, "history": info.Config.MaxMsgsPerSubject})
+	}
 	if os.Getenv("LAB_PROOF_MODE") == "outcome-isolation" {
 		trace := os.Getenv("LAB_PROOF_TRACE")
 		stream, err := js.StreamInfo("OUTCOMES")

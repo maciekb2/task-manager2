@@ -37,7 +37,7 @@ function syncTrafficForm(){
  for(const name of ['rps','concurrency'])$(name+'Value').value=$(name).value;
  $('trafficDraft').textContent=trafficDirty.size?'Szkic zmian — jeszcze niezastosowany. Stop zatrzymuje aktualną konfigurację.':'Konfiguracja z klastra. Czas dotyczy następnego uruchomienia; odliczanie pokazuje stan bieżący.';
 }
-function values() {return {payload_bytes:+$('payload').value,rps:+$('rps').value,concurrency:+$('concurrency').value,delay_ms:+$('delay').value,error_percent:+$('errors').value,cpu_ms:+$('cpu').value,duration_seconds:+$('duration').value};}
+function values() {return {...state?.config,payload_bytes:+$('payload').value,rps:+$('rps').value,concurrency:+$('concurrency').value,delay_ms:+$('delay').value,error_percent:+$('errors').value,cpu_ms:+$('cpu').value,duration_seconds:+$('duration').value};}
 async function configure(config) {try{await request('/api/config',config);trafficDirty.clear();notify(config.rps?'Eksperyment uruchomiony. Obserwuj rzeczywisty ruch.':'Generator zatrzymany. Żądania już przyjęte kończą pracę.');await refresh();}catch(e){notify(e.message,true);}}
 $('trafficForm').addEventListener('submit',e=>{e.preventDefault();configure(values());});
 $('stopTraffic').addEventListener('click',async()=>{try{await request('/api/config',{...state.config,rps:0});await refresh();notify('Zatrzymano ruch. Szkic pozostaje niezastosowany.');}catch(e){notify(e.message,true);}});
