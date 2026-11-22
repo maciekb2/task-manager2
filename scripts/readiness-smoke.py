@@ -22,8 +22,10 @@ try:
  api('/api/action',{'action':'reset'})
  api('/api/config',{'rps':5,'concurrency':4,'delay_ms':100,'cpu_ms':0,'error_percent':100,'duration_seconds':90})
  k('rollout','restart','deployment/echo');k('rollout','status','deployment/echo','--timeout=90s')
- s=wait(lambda s:len([p for p in s['cluster']['pods'] if p['component']=='echo' and p['phase']=='Running' and p['ready']==p['containers']])==2)
- names={p['name'] for p in s['cluster']['pods'] if p['component']=='echo' and p['phase']=='Running'}
+ actual=json.loads(k('get','pods','-l','app.kubernetes.io/component=echo','-o','json'))
+ names={p['metadata']['name'] for p in actual['items'] if p['status']['phase']=='Running' and not p['metadata'].get('deletionTimestamp')}
+ assert len(names)==2,names
+ s=wait(lambda s:names<={p['name'] for p in s['cluster']['pods'] if p['component']=='echo' and p['phase']=='Running' and p['ready']==p['containers']})
  s=wait(lambda s:any(e['kind']=='http' and e['to']=='echo' and e.get('target_pod') in names for e in s['events']))
  fresh=[e for e in s['events'] if e['kind']=='http' and e['to']=='echo' and e.get('target_pod') in names]
  assert fresh and all(e['status']==503 for e in fresh),fresh
