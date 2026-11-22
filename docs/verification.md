@@ -285,3 +285,23 @@ image, manual rollback and timed rollback after controller restart, at `fe96a4c`
 https://github.com/maciekb2/task-manager2/actions/runs/45066294325 . This result does
 not certify later source. HTTP outcome replay capacity remains explicitly bounded
 as documented in decisions/004; a dedicated retention path is deferred to stage 4.
+
+CI `45068716761` exposed a fixture discovery race: after a completed rollout the
+observer could still report the previous pod names and their pre-scenario 200.
+The startup check now obtains post-rollout pod identities from Kubernetes and
+waits for discovery to report those identities before examining responses. The
+original failed run remains retained; no application default escaped a new pod
+in that evidence. Other steps through durable replay passed in that run.
+
+### Experiment UI acceptance
+
+At deployed source `77c45c3cdfc55667`, actual browser actions created two 90 s
+phases, downloaded the JSON export and opened a native scoped waterfall. Baseline:
+694 responses, mean 6.08 ms, 7.71 req/s; 400 ms delay variant: 200 responses, mean
+407.91 ms, 2.22 req/s. Both summaries were complete. Baseline had one eligible
+13/13-pod CPU/RAM window; variant had none. The UI explicitly reported the missing
+window and did not invent a zero comparison. Ninety seconds does not guarantee a
+fully contained window with this Metrics Server cadence, so the suggested duration
+is now 180 s. The two response-time charts now use a shared vertical scale. Those
+small presentation changes await the next deploy/render check. API lifecycle
+acceptance also passed eleven checks after scoped admission was introduced.

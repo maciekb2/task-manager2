@@ -3,9 +3,9 @@
  const number=(v,d=2)=>v===null||v===undefined||!Number.isFinite(Number(v))?'—':Number(v).toLocaleString('pl-PL',{maximumFractionDigits:d});
  const settings=()=>({config:{timeout_ms:+$('expTimeout').value,max_in_flight:+$('expLimit').value,breaker:$('expBreaker').value==='true',fan_out:$('expFanout').value==='true',branch_delay_ms:+$('expBranch').value,rps:+$('expRPS').value,concurrency:+$('expConcurrency').value,delay_ms:+$('expDelay').value,cpu_ms:+$('expCPU').value,error_percent:+$('expErrors').value,payload_bytes:+$('expPayload').value},duration_seconds:+$('expDuration').value,replicas:+$('expReplicas').value});
  function record(){return data.experiments.find(e=>e.id===selected);}
- function plot(p) {
+ function plot(p,sharedMax) {
   const points=p.series||[];if(!points.length)return '<p class="muted">Próba jeszcze nie ma pomiarów HTTP.</p>';
-  const values=points.map(x=>x.mean_ms).filter(x=>x!==null),max=Math.max(1,...values),W=750,H=135,L=40,T=12,B=24;
+  const values=points.map(x=>x.mean_ms).filter(x=>x!==null),max=Math.max(1,sharedMax||0,...values),W=750,H=135,L=40,T=12,B=24;
   const start=Date.parse(p.started),end=Math.max(start+1000,...points.map(x=>Date.parse(x.at))),x=t=>L+(t-start)/(end-start)*(W-L-12),y=v=>H-B-v/max*(H-T-B);
   let path='',pen=false;for(const v of points){if(v.mean_ms===null){pen=false;continue;}path+=`${pen?'L':'M'}${x(Date.parse(v.at)).toFixed(1)},${y(v.mean_ms).toFixed(1)} `;pen=true;}
   const actions=(p.timeline||[]).filter(e=>e.kind==='action');
@@ -31,7 +31,8 @@
   if(phases.length===2&&phases[0].version!==phases[1].version)warnings.push('Pomiędzy próbami zmieniła się wersja kodu. Uwzględnij to w interpretacji.');
   if(phases.length&&phases.some(p=>!p.resources?.length))warnings.push('Brak kwalifikujących się pełnych okien CPU/RAM dla części prób. Nie porównujemy ich jako zer.');
   $('experimentCaveat').textContent=warnings.join(' ');
-  const timeline=phases.map(p=>`<div class="experiment-phase-chart"><h3>${esc(p.label)} · ${time(p.started)} — ${p.ended&&!p.ended.startsWith('0001')?time(p.ended):'trwa'}</h3>${plot(p)}</div>`).join('');
+  const sharedMax=Math.max(1,...phases.flatMap(p=>(p.series||[]).map(s=>s.mean_ms||0)));
+  const timeline=phases.map(p=>`<div class="experiment-phase-chart"><h3>${esc(p.label)} · ${time(p.started)} — ${p.ended&&!p.ended.startsWith('0001')?time(p.ended):'trwa'}</h3>${plot(p,sharedMax)}</div>`).join('');
   markup('experimentTimeline',timeline+table(['Czas','Próba','Zaobserwowana akcja / zdarzenie'],phases.flatMap(p=>(p.timeline||[]).map(e=>[time(e.time),esc(p.label),esc(e.message||e.kind)]))));
   markup('experimentTraces',phases.map(p=>`<h3>${esc(p.label)} · <code>${esc(p.id)}</code></h3>`+(p.traces||[]).map(id=>`<button class="trace-choice" data-experiment-trace="${esc(id)}"><code>${esc(id)}</code><span>Otwórz rzeczywisty waterfall →</span></button>`).join('')).join(''));
   $('experimentTraces').querySelectorAll('[data-experiment-trace]').forEach(b=>b.onclick=()=>window.showPerformanceTrace?.(b.dataset.experimentTrace));
