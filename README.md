@@ -30,6 +30,22 @@ ruch i opóźnienia, czasy funkcji/etapów, czasy zadań oraz waterfall OpenTele
 Jaeger jest dostępny pod `/tracing/` przez ten sam lokalny panel. Dane nie wymagają
 monitorowania systemu hosta. [Polski przewodnik](docs/learning-observability.md).
 
+## Experiments, resilience and automatic response
+
+**Eksperymenty A/B** measures a scoped baseline and one intervention: propagated
+run IDs, configuration snapshots, actual throughput/latency/payload, traces,
+action timeline and downloadable JSON. Complete CPU/RAM windows are required;
+missing measurements stay missing. [Experiment contract](docs/experiments.md).
+
+**Odporność systemu** demonstrates timeout/504, admission/429, circuit breaker
+suppression/recovery and real parallel inventory/pricing calls. Outcomes have
+independent bounded broker retention. [Limits and guarantees](docs/resilience.md).
+
+The same view demonstrates native CPU **HPA**: provoke load on one worker, enable
+1–5 replicas, inspect the actual scaling reason, ready pods and measured effect.
+Reset restores the lab. Queue-driven autoscaling remains optional future work.
+[HPA workflow](docs/autoscaling.md).
+
 ## Start
 
 Prerequisites: **Linux amd64**, a running Docker daemon accessible to your user,
@@ -40,8 +56,6 @@ account, registry credentials, npm, Helm, or host Go installation is required.
 ```sh
 git clone https://github.com/maciekb2/task-manager2.git
 cd task-manager2
-# Until the v2 branch is merged:
-git switch feat/systems-lab
 make up
 ```
 
@@ -67,7 +81,9 @@ demo, select **Normalny ruch** in the panel.
 
 ## What is running?
 
-Twelve separately deployed services (one shared, small Go image plus NATS):
+Fourteen separately deployed components: twelve application roles sharing one
+small Go image, plus NATS and Jaeger. Separate deployments demonstrate runtime
+behavior; their number is not a claim of independent product/domain boundaries:
 
 ```mermaid
 flowchart LR
@@ -78,11 +94,14 @@ flowchart LR
   gateway --> validator[Validator]
   validator --> enricher[Enricher]
   enricher --> echo[HTTP worker ×2]
+  enricher -. optional fan-out .-> inventory[Inventory]
+  enricher -. optional fan-out .-> pricing[Pricing]
   control --> nats[NATS JetStream]
   nats --> consumer[Queue consumer]
   consumer --> gateway
-  events[HTTP outcome events] --> store[Result store]
-  store --> nats
+  events[Gateway outcomes] --> outcomes[OUTCOMES stream]
+  store[Result facade] --> outcomes
+  hpa[Native CPU HPA] -. 1–5 replicas .-> echo
   job[Job / CronJob] --> gateway
 ```
 

@@ -319,3 +319,20 @@ restart. Ten distinct checks accepted (one fan-out check was repeated during the
 continuation). The original fixture stopped on Jaeger's transient 404 before SDK
 export; its bounded polling now tolerates that expected state. Prior protection
 checks were reused rather than rerun. Canonical CI remains pending for this stage.
+
+### Native HPA runtime acceptance
+
+Source `b72801f3c99720a7`: race tests passed; six actual autoscaling checks passed.
+At unchanged workload settings, one replica produced 926 responses / 20 s
+(46.3 req/s); bucket P95 586.505–677.044 ms. Native HPA reported 499m average CPU
+against 200m/pod, recommended 3 replicas, and Kubernetes made 3 ready. The later
+20 s window had 999 responses (49.95 req/s), bucket P95 147.384–153.976 ms, no errors.
+These are this local synthetic run, not a capacity guarantee. Config edits kept
+the server deadline. A real control restart with an operator-injected expired
+persisted deadline removed HPA and restored 2 ready pods. No host metrics used.
+
+Resilience browser checks confirmed the live protection table and both observed
+fan-out edges. The first edge assertion incorrectly required a vertical SVG path
+with zero-width bounds to be Playwright-visible; DOM attachment is the correct
+check, with visual screenshot inspection. Mobile inspection found a real table
+overflow; horizontal table containment is fixed in the next presentation deploy.
