@@ -30,6 +30,8 @@ jobs:
           python3 -m py_compile deploy/render.py scripts/*.py
           bash -n scripts/lab.sh
       - name: Bootstrap isolated Minikube from checkout
+        env:
+          GITHUB_TOKEN: ${{ github.token }} # Minikube release lookup; read-only, step-scoped
         run: make up
       - name: Real HTTP, queue, Kubernetes and Job acceptance
         run: make smoke
@@ -47,6 +49,14 @@ jobs:
         run: python3 scripts/readiness-smoke.py
       - name: Actual image update and rollback
         run: python3 scripts/release-smoke.py
+      - name: Bounded HTTP resilience and independent outcomes
+        run: python3 scripts/resilience-smoke.py
+      - name: Existing state and credential reconciliation
+        run: python3 scripts/reconcile-smoke.py
+      - name: Native CPU autoscaling and bounded recovery
+        run: python3 scripts/autoscaling-smoke.py
+      - name: Scoped baseline and variant experiments
+        run: python3 scripts/experiments-smoke.py
       - name: Report local development acceptance
         if: always()
         run: |
@@ -65,4 +75,4 @@ jobs:
       - name: Stop the disposable profile
         if: always()
         run: |
-          if test -x .tools/minikube-linux-amd64; then make stop; fi
+          if test -x .tools/minikube-linux-amd64 && test -s .state/kubeconfig; then make stop; fi

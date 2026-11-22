@@ -251,6 +251,16 @@ The affected local config-restart → durability sequence passed with that wait.
 The original failed run remains visible:
 [45063952285](https://github.com/maciekb2/task-manager2/actions/runs/45063952285).
 
+## Scoped experiments — implementation checkpoint
+
+The experiment lifecycle, propagated run IDs, independent per-phase statistics,
+whole-window resource eligibility and JSON export passed unit/race checks. Focused
+runtime acceptance passed eleven checks: actual faster/slower A/B, distinct phase
+IDs, all four HTTP hops, no invented CPU sample for short runs, queue retry/native
+Job carriers, native OTel run tags, drain/seal, export and explicit controller
+interruption with sealed historical results preserved. The receipt is ignored
+`.state/experiments-smoke-results.json`; this checkpoint does not yet claim the
+later comparison UI or hosted experiment CI has been accepted.
 ### Review corrections (2026-11-22)
 
 New echo/generator processes load persisted configuration before listening.
@@ -282,3 +292,142 @@ The startup check now obtains post-rollout pod identities from Kubernetes and
 waits for discovery to report those identities before examining responses. The
 original failed run remains retained; no application default escaped a new pod
 in that evidence. Other steps through durable replay passed in that run.
+
+### Experiment UI acceptance
+
+At deployed source `77c45c3cdfc55667`, actual browser actions created two 90 s
+phases, downloaded the JSON export and opened a native scoped waterfall. Baseline:
+694 responses, mean 6.08 ms, 7.71 req/s; 400 ms delay variant: 200 responses, mean
+407.91 ms, 2.22 req/s. Both summaries were complete. Baseline had one eligible
+13/13-pod CPU/RAM window; variant had none. The UI explicitly reported the missing
+window and did not invent a zero comparison. Ninety seconds does not guarantee a
+fully contained window with this Metrics Server cadence, so the suggested duration
+is now 180 s. The two response-time charts now use a shared vertical scale. Those
+small presentation changes await the next deploy/render check. API lifecycle
+acceptance also passed eleven checks after scoped admission was introduced.
+
+### Resilience runtime acceptance
+
+Deployed source `15c725cf2a9e19ec`: unit/race checks passed. Actual cluster checks
+proved gateway deadline/504, admission/429 with successful admitted work, open
+breaker suppression and successful half-open recovery. Native traces proved two
+parallel lookups overlapping by more than 100 ms, actual branch payload events and
+cancellation on deadline. An HTTP task completed while result-store was offline;
+20,001 synthetic span messages evicted the prior EVENTS window, while OUTCOMES
+sequence 106 and its payload/time stayed unchanged and became visible after facade
+restart. Ten distinct checks accepted (one fan-out check was repeated during the
+continuation). The original fixture stopped on Jaeger's transient 404 before SDK
+export; its bounded polling now tolerates that expected state. Prior protection
+checks were reused rather than rerun. Canonical CI remains pending for this stage.
+
+### Native HPA runtime acceptance
+
+Source `b72801f3c99720a7`: race tests passed; six actual autoscaling checks passed.
+At unchanged workload settings, one replica produced 926 responses / 20 s
+(46.3 req/s); bucket P95 586.505–677.044 ms. Native HPA reported 499m average CPU
+against 200m/pod, recommended 3 replicas, and Kubernetes made 3 ready. The later
+20 s window had 999 responses (49.95 req/s), bucket P95 147.384–153.976 ms, no errors.
+These are this local synthetic run, not a capacity guarantee. Config edits kept
+the server deadline. A real control restart with an operator-injected expired
+persisted deadline removed HPA and restored 2 ready pods. No host metrics used.
+
+Resilience browser checks confirmed the live protection table and both observed
+fan-out edges. The first edge assertion incorrectly required a vertical SVG path
+with zero-width bounds to be Playwright-visible; DOM attachment is the correct
+check, with visual screenshot inspection. Mobile inspection found a real table
+overflow; horizontal table containment is fixed in the next presentation deploy.
+Experiment CI `45070416641` passed unit/race and syntax, but bootstrap failed before
+creating the profile: Minikube's lookup of the pinned Kubernetes patch hit the
+shared runner IP's anonymous GitHub API rate limit (403). The bootstrap step now
+uses the job's existing read-only ephemeral GITHUB_TOKEN, supported by the pinned
+Minikube source (`pkg/minikube/download/gh/gh.go`). It is step-scoped, not written
+to manifests or runtime, and no external account secret is introduced. Cleanup
+skips a profile that never produced a kubeconfig. Original failure retained.
+
+### Existing-state and credential acceptance
+
+Source `192e934551a2c720`: task-KV TTL/history/byte limits were deliberately changed
+by an operator fixture and correctly reconciled after a real control restart,
+with a terminal task retained. The actual NATS Secret was deleted and recreated
+through make deploy. Images stayed identical, every broker/client pod identity
+changed through the credential digest, and old/new tasks completed. Both checks
+passed. No credential value was logged or exported.
+
+CI `45070783076` confirmed the authenticated Minikube lookup/bootstrap works. It
+then exposed an existing probe race: `/api/state` legitimately reports cluster=null
+until observer discovery arrives; smoke's predicate dereferenced that null. The
+waiters now wait explicitly for discovery, preserving their time bounds and real
+assertions. This is an initialization state, not evidence of a failed discovery.
+
+### Final UI and basic acceptance
+
+Fifteen basic cluster checks passed at source `192e934551a2c720`, including all
+14 expected deployments, access boundaries, actual chain/503/trace/result, scaling,
+pod replacement, backlog/retry/DLQ, successful/failed Jobs, real CronJob scheduling
+and baseline restoration. At `3e1340296c56dfa2`, browser acceptance passed mobile
+containment (390 px), actual fan-out edges, protection controls and HPA creation.
+Both HPA API actions and the baseline UI preserved an active experiment instead
+of aborting it. Initial native HPA desiredReplicas=0 precedes its first valid
+recommendation; the UI now displays waiting and omits that zero from its chart.
+That final small display change awaits integration/deployment acceptance.
+
+Secret scan: Gitleaks 8.30.1 over the ten new commits (about 144 KiB) reported no
+leaks. This is scoped source evidence, not a claim about arbitrary historical
+repositories or production secret hygiene.
+
+The browser HPA flow exposed a genuine rapid-click race: separate reset/scale/config
+requests could interleave with enable, rejecting scale and leaving CPU stopped.
+Baseline preparation is now a single actionMu-protected server action, and the
+three HPA buttons stay disabled until their operation completes. The earlier
+API-driven HPA result remains valid; this UI flow correction requires fresh focused
+acceptance. Browser predicates that perform async fetch are replaced by explicit
+bounded polling of awaited evaluations in this acceptance, avoiding a premature
+wait result in the CLI bridge.
+
+At source `aafe725f08cd3f83`, immediate baseline → enable clicks now observed disabled
+controls during preparation, retained actual RPS=50/CPU settings and reached three
+ready pods with a native 497m → 200m/pod scaling decision. The browser verified real
+state through explicitly awaited bounded polling, stopped HPA, restored the base,
+and checked the 390 px layout without overflow. `docs/assets/autoscaling.png` is
+that actual UI capture; a later small change formats CPU as readable quantities.
+
+Review found that phase readiness waited only for echo/consumer after reset. It
+now waits for generator, every HTTP hop, consumer and result-store, plus optional
+fan-out services. A regression stops the gateway, restores it through normal
+phase preparation and compares the phase start with the actual Pod Ready
+transition; a zero-traffic baseline is rejected. This fixes a reachable cause of
+short-run measurement skew, rather than redefining that skew as a complete result.
+
+Final lifecycle review found an interrupted scoped run stopped HTTP but could
+leave its enabled CronJob scheduling old-run work. Recovery now suspends that
+producer before clearing the persisted run ID (preserving retry intent on failure).
+The restart regression actually enables the scoped CronJob first, then verifies
+both producers stop. Phase configuration also clears server-owned release/HPA
+fields supplied by a client, avoiding spurious recovery intent in an experiment.
+These focused corrections supersede the prior candidate; earlier accepted scopes
+remain evidence for their stated source, not a final green release.
+
+## Complete portfolio candidate accepted
+
+Canonical hosted CI [45073541926](https://github.com/maciekb2/task-manager2/actions/runs/45073541926)
+passed at `49fd70032a3040473dbe978a44566771e6424874`, runtime source/image
+`fdd1599d48fca1f4`. Every workflow step passed on a fresh isolated Minikube:
+unit/race and syntax, bootstrap, 15 basic cluster checks, native traces/resources,
+payload/retry accounting, control outage, broker/tracing config restoration, actual
+duplicate delivery and retained outcomes, startup/subscription recovery, immutable
+faulty image plus manual and restarted-controller timed rollback, 10 resilience
+checks including actual retention pressure, 2 existing-state/credential checks,
+6 native HPA checks and 17 experiment lifecycle/correlation checks. This includes
+the stopped-gateway readiness regression, server-owned phase fields and suspension
+of an actually enabled scoped CronJob after controller restart.
+
+The same source is deployed locally through the project kubeconfig. The final
+working tree is synthetic-only; scoped secret scanning reported no findings.
+Earlier cancelled candidates and fixture failures remain recorded above and are
+not counted as accepted runs. This receipt/documentation update changes no runtime
+source or workflow; its code evidence is the exact revision linked above. The
+complete beta's merge/tag and publication are recorded in GitHub Releases.
+
+Required implementation stages 1–5 are accepted. Queue-driven consumer scaling
+remains explicitly optional. Predecessor archival is a separate owner-review
+migration follow-up; no predecessor history was deleted.

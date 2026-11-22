@@ -11,7 +11,7 @@ caches observer snapshots and the UI flags stale discovery timestamps.
 
 The controller has separate RBAC: the one experiment ConfigMap, named demo
 deployment scale subresources, pod reads/logs/deletion in the lab namespace, Job
-creation and the named CronJob. Its HTTP interface further restricts pod deletion
+creation the named CronJob and the bounded echo HPA. Its HTTP interface further restricts pod deletion
 to the managed demo components. Kubernetes RBAC cannot select pods by label, so
 the application restriction complements the namespace boundary. No component has
 cluster-admin, host mounts, host networking, a Docker socket or Secret-read RBAC.
@@ -30,7 +30,7 @@ target to echo. No caller-supplied URL is fetched. Requests have a 32-character
 correlation identifier, independently timed hops and observed destination pod IDs.
 Parameters are read from the controller's persisted ConfigMap; workers refresh their cached configuration asynchronously; the generator refreshes
 with a 250 ms interval and other data-plane roles with a one-second interval when
-control is reachable. Failed refreshes back off and never block request pacing. If control is
+control is reachable. New pods load configuration before listening. Scoped requests require a matching run epoch (otherwise a bounded refresh or explicit 409); ordinary cached work remains independent of control availability. Failed background refreshes back off and never block request pacing. If control is
 unavailable they retain their last configuration. Generator deadlines remain
 absolute and bounded even during a controller interruption.
 
@@ -57,8 +57,10 @@ Neither discovery annotations nor dependency links prove traffic occurred.
 * `EVENTS` retains correlated hop/action events. Control replays them after restart;
   its in-memory recent ring is bounded to 10000 display events; traffic metrics and
   topology windows are aggregated independently. Topology uses 30 closed seconds
-  and a current-activity timestamp, excluding function spans from network edges. Result-store persists gateway
-  outcomes separately in `lab-http-results` KV. Storage has explicit time/size bounds.
+  and a current-activity timestamp, excluding function spans from network edges.
+  Gateway outcomes use the separate bounded OUTCOMES stream, read by result-store.
+  This avoids span-pressure eviction and a redundant unique-key KV projection.
+  See [resilience contracts](resilience.md) for actual bounds and guarantees.
 
 ## Kubernetes Job/CronJob
 
@@ -74,10 +76,14 @@ inputs cannot replace the pod template, image, command or service account.
 `deploy/render.py` produces Kubernetes JSON using only Python's standard library.
 The lab image tag derives from its source inputs; another `make deploy` builds a
 new image when they change. Unchanged images are reused. Bootstrap creates broker
-credentials/configuration only if absent and reconciles declarative resources.
+credentials/configuration only if absent and reconciles declarative resources. A
+stable Secret digest rolls the broker and its clients after credential recreation.
+Control reconciles stream and task-KV retention bounds on startup.
 
 Minikube/Kubernetes/NATS/Go versions are pinned in code. This is a local development
-release path; no hosted CI/CD or production readiness is claimed. Full production
+release path with hosted GitHub Actions checks that create the isolated lab and
+exercise real runtime and rollback paths. Results are revision-specific in
+[verification](verification.md); there is no production readiness claim. Full production
 auth, public ingress, HA, offsite recovery, packet-level network discovery are outside the local lab. OpenTelemetry/Jaeger
 are installed locally by the same bootstrap; their storage is intentionally bounded.
 
@@ -120,3 +126,14 @@ configuration triggers a real rollout on reconciliation. A single generator repl
 maintains the global configured traffic cap; worker/consumer replicas remain
 independently scalable. HTTP outcome keys are create-only on replay, and retrieval
 filters by original event age in addition to the KV retention budget.
+
+## Correlation, resilience and automatic response
+
+[Scoped experiments](experiments.md) snapshot each phase and seal observed facts
+before resetting resources. Only fully contained CPU measurement windows qualify;
+short phases can have no comparable resource sample. OTel spans carry run IDs.
+
+[Resilience](resilience.md) adds per-process gateway admission and circuit state,
+HTTP cancellation and two fixed internal fan-out branches. [Native HPA](autoscaling.md)
+acts on actual echo CPU with bounded pod limits and persisted cleanup intent.
+Neither control loop monitors or scales the host.

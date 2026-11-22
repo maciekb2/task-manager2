@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Actual duplicate delivery and create-only outcome replay; credentials stay in memory."""
+"""Actual duplicate delivery and independent outcome retention; credentials stay in memory."""
 import base64,json,os,subprocess,time
 from pathlib import Path
 import urllib.request
@@ -41,8 +41,8 @@ try:
  before=proof('entry')
  k('rollout','restart','deployment/result-store');k('rollout','status','deployment/result-store','--timeout=90s')
  time.sleep(2)
- after=proof('entry');assert before==after,'replay renewed or changed stored result'
- checks.append('result-store restart/replay preserves original KV revision and creation time');print('PASS',checks[-1],flush=True)
+ after=proof('entry');assert before==after,'restart changed the original retained outcome'
+ checks.append('result-store restart preserves original OUTCOMES sequence and creation time');print('PASS',checks[-1],flush=True)
  (ROOT/'.state/durability-smoke-results.json').write_text(json.dumps({'checks':checks,'duplicate':duplicate,'outcome':after},indent=2))
 finally:
  forward.terminate();forward.wait(timeout=10);env.pop('LAB_PROOF_TOKEN',None)

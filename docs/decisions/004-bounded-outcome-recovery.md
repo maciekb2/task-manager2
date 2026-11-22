@@ -9,3 +9,8 @@ present. Under heavy span traffic the replay window can be seconds. Its separate
 proves preservation for the demonstrated window, not one-hour lossless capture.
 Dedicated bounded outcome retention belongs to the resilience increment; it must
 not be described as production delivery/durability until that path is verified.
+
+Superseded in the resilience increment: dedicated OUTCOMES retention plus a
+bounded read facade replaces the redundant HTTP KV projection. See ../resilience.md
+and the actual retention-pressure proof in ../verification.md. The original first
+release limitation and its historical evidence above are preserved.

@@ -63,9 +63,9 @@ func (a *App) operation(ctx context.Context, name string) (context.Context, func
 		if status >= 400 {
 			span.SetStatus(codes.Error, fmt.Sprintf("HTTP %d", status))
 		}
-		span.SetAttributes(attribute.Int("http.response.status_code", status))
+		span.SetAttributes(attribute.Int("http.response.status_code", status), attribute.String("lab.run.id", runID(ctx)))
 		span.End()
-		a.emit(Event{Trace: traceHex(ctx, ""), From: a.role, To: a.role, Kind: "span", Operation: name, Started: started, Duration: float64(time.Since(started).Microseconds()) / 1000, Status: status, SpanID: span.SpanContext().SpanID().String()})
+		a.emit(Event{RunID: runID(ctx), Trace: traceHex(ctx, ""), From: a.role, To: a.role, Kind: "span", Operation: name, Started: started, Duration: float64(time.Since(started).Microseconds()) / 1000, Status: status, SpanID: span.SpanContext().SpanID().String()})
 	}
 }
 func (a *App) tracedWork(next http.Handler) http.Handler {
@@ -74,14 +74,14 @@ func (a *App) tracedWork(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		parent := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+		parent := runContext(otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header)), r.Header.Get("X-Lab-Run"))
 		ctx, span := otel.Tracer("systems-lab").Start(parent, a.role+".handle", trace.WithSpanKind(trace.SpanKindServer))
 		defer span.End()
 		r = r.WithContext(ctx)
 		r.Header.Set("X-Lab-Trace", traceHex(ctx, traceID(r)))
 		response := &statusResponse{ResponseWriter: w, status: 200}
 		next.ServeHTTP(response, r)
-		span.SetAttributes(attribute.String("http.request.method", r.Method), attribute.String("url.path", r.URL.Path), attribute.Int("http.response.status_code", response.status))
+		span.SetAttributes(attribute.String("lab.run.id", runID(ctx)), attribute.String("http.request.method", r.Method), attribute.String("url.path", r.URL.Path), attribute.Int("http.response.status_code", response.status))
 		if response.status >= 400 {
 			span.SetStatus(codes.Error, fmt.Sprintf("HTTP %d", response.status))
 		}

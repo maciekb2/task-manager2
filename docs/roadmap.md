@@ -29,7 +29,7 @@ rather than presenting deployment count as proof of architectural maturity.
       regression tests and actual lab acceptance. Preserve previous accepted proof
       for unchanged behavior.
 
-### 2. First portfolio release — local demos verified; release/CI pending
+### 2. First portfolio release — accepted and merged
 
 - [x] Performance demo: provoke a bottleneck, inspect trace/resources, apply a
       change and show its measured effect.
@@ -38,30 +38,30 @@ rather than presenting deployment count as proof of architectural maturity.
 - [x] Interview-oriented README, architecture decisions, demo script and short
       visual presentation. Explicitly separate local checks, CI, deployment and
       recovery proof.
-- [ ] Verify supported clean-checkout bootstrap and automated checks on the selected
+- [x] Verify supported clean-checkout bootstrap and automated checks on the selected
       existing delivery path. Do not invent CI success from local commands.
-- [ ] Publish a reviewed release after acceptance. Communicate predecessor migration
-      and archive the predecessor only after acceptance of its replacement.
+- [x] Publish the reviewed, verified first portfolio increment on main.
+      Tagged publication of the complete beta follows the accepted integration.
 
 ### 3. Reproducible experiments and comparison
 
-- [ ] Run identifiers/configuration snapshots and bounded experiment history.
-- [ ] Baseline versus intervention comparison with compatible measurement windows.
-- [ ] Shared action/metric/trace timeline and exportable evidence without credentials.
-- [ ] Repeating/aborting a run restores a known state and does not mix old work into
+- [x] Run identifiers/configuration snapshots and bounded experiment history.
+- [x] Baseline versus intervention comparison with compatible measurement windows.
+- [x] Shared action/metric/trace timeline and exportable evidence without credentials.
+- [x] Repeating/aborting a run restores a known state and does not mix old work into
       current results.
 
 ### 4. Deeper resilience
 
-- [ ] Bounded timeout and backpressure scenarios with visible consequences.
-- [ ] Actual duplicate delivery and idempotent terminal results; explain the limits
+- [x] Bounded timeout and backpressure scenarios with visible consequences.
+- [x] Actual duplicate delivery and idempotent terminal results; explain the limits
       of at-least-once guarantees and external side effects.
-- [ ] Circuit breaker and fan-out, each with a problem, protection, measurable cost
+- [x] Circuit breaker and fan-out, each with a problem, protection, measurable cost
       and recovery scenario. Add services when they demonstrate new behavior.
 
 ### 5. Automatic response
 
-- [ ] HPA: visible scaling reason, actual ready pods and measured effect/limits.
+- [x] HPA: visible scaling reason, actual ready pods and measured effect/limits.
 - [ ] Optional queue-driven consumer scaling after the core HPA demonstration.
 
 ## Definition of done
@@ -75,3 +75,15 @@ payload transfer is not a packet/interface measurement.
 
 The full goal remains active until required stages are accepted. Optional features
 are explicitly identified above; they are not silently substituted for core work.
+
+Local and hosted acceptance for all required stages is recorded in verification.md.
+Canonical CI 45073541926 passed the complete candidate at 49fd700 / source
+fdd1599d48fca1f4. Tagged publication and source identity are recorded on the GitHub
+release page. The optional queue-driven scaler remains future work.
+
+## Post-acceptance migration
+
+- [ ] After the owner reviews the replacement, communicate the successor in the
+      predecessor README and archive that repository. Preserve its branches,
+      history and unmerged examples. This separate migration follow-up is not a
+      destructive bootstrap action or a prerequisite for using this one-repo lab.

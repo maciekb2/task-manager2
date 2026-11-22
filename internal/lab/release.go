@@ -76,7 +76,7 @@ func (a *App) changeRelease(candidate bool) (string, error) {
 		a.config = c
 		a.mu.Unlock()
 	}
-	a.emit(Event{From: "control", To: "echo", Kind: "action", Message: "Wersja echo: " + image})
+	a.emit(Event{RunID: a.getConfig().RunID, From: "control", To: "echo", Kind: "action", Message: "Wersja echo: " + image})
 	return image, nil
 }
 func (a *App) recoverRelease(ctx context.Context) {

@@ -42,7 +42,13 @@ func (a *App) authorize(r *http.Request) error {
 	return nil
 }
 func (a *App) startControl(ctx context.Context, mux *http.ServeMux) error {
+	if err := a.initExperiments(); err != nil {
+		return err
+	}
+	a.experimentRoutes(mux)
+	go a.runExperiments(ctx)
 	go a.recoverRelease(ctx)
+	go a.recoverAutoscaling(ctx)
 	_, err := a.bus.js.Subscribe("lab.events", func(m *nats.Msg) {
 		var e Event
 		if json.Unmarshal(m.Data, &e) != nil {
@@ -50,11 +56,15 @@ func (a *App) startControl(ctx context.Context, mux *http.ServeMux) error {
 		}
 		a.mu.Lock()
 		defer a.mu.Unlock()
+		if metadata, err := m.Metadata(); err == nil && metadata.Sequence.Stream > a.eventSequence {
+			a.eventSequence = metadata.Sequence.Stream
+		}
 		if a.seen[e.ID] {
 			return
 		}
 		a.seen[e.ID] = true
 		a.perf.record(e)
+		a.experiments.record(e)
 		a.events = append(a.events, e)
 		if len(a.events) > 10000 {
 			delete(a.seen, a.events[0].ID)
@@ -111,7 +121,7 @@ func (a *App) startControl(ctx context.Context, mux *http.ServeMux) error {
 		for i := len(events) - 1; i >= 0; i-- {
 			reverse = append(reverse, events[i])
 		}
-		writeJSON(w, 200, Object{"network": a.perf.networkWindow(time.Now()), "cluster": cluster, "config": config, "events": reverse, "edges": edges, "queue": a.queueState(), "metrics": a.perf.window(time.Now()), "self": Object{"release_images": Object{"current": env("LAB_IMAGE_CURRENT", ""), "candidate": env("LAB_IMAGE_CANDIDATE", "")}, "role": "control", "namespace": Namespace, "discovery": "Kubernetes API (3 s)", "transport": "NATS JetStream", "retention": "events 1h / results 24h", "version": env("LAB_VERSION", "dev")}, "at": time.Now().UTC()})
+		writeJSON(w, 200, Object{"experiment": a.experiments.status(), "network": a.perf.networkWindow(time.Now()), "cluster": cluster, "config": config, "events": reverse, "edges": edges, "queue": a.queueState(), "metrics": a.perf.window(time.Now()), "self": Object{"release_images": Object{"current": env("LAB_IMAGE_CURRENT", ""), "candidate": env("LAB_IMAGE_CANDIDATE", "")}, "role": "control", "namespace": Namespace, "discovery": "Kubernetes API (3 s)", "transport": "NATS JetStream", "retention": "EVENTS max 1h/20000/32MiB; OUTCOMES max 1h/10000/16MiB; task KV max 24h/8MiB", "version": env("LAB_VERSION", "dev")}, "at": time.Now().UTC()})
 	})
 	mux.HandleFunc("GET /api/network", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, a.perf.networkReport(time.Now())) })
 	mux.HandleFunc("GET /api/performance", func(w http.ResponseWriter, r *http.Request) {
@@ -207,7 +217,13 @@ func (a *App) startControl(ctx context.Context, mux *http.ServeMux) error {
 		}
 		a.actionMu.Lock()
 		defer a.actionMu.Unlock()
+		if a.experimentBusy() {
+			writeJSON(w, 409, Object{"error": "Próba przygotowuje stan albo kończy pomiar; poczekaj lub przerwij eksperyment."})
+			return
+		}
+		v.AutoscaleUntil = a.getConfig().AutoscaleUntil
 		v.ReleaseUntil = a.getConfig().ReleaseUntil
+		v.RunID = a.getConfig().RunID
 		v.ReleaseChangedAt = a.getConfig().ReleaseChangedAt
 		if e := a.kube.saveConfig(v.Config); e != nil {
 			fail(w, e)
@@ -216,7 +232,7 @@ func (a *App) startControl(ctx context.Context, mux *http.ServeMux) error {
 		a.mu.Lock()
 		a.config = v.Config
 		a.mu.Unlock()
-		a.emit(Event{From: "control", To: "generator", Kind: "action", Message: fmt.Sprintf("Konfiguracja: %d req/s, delay %d ms, errors %d%%", v.RPS, v.DelayMS, v.ErrorPercent)})
+		a.emit(Event{RunID: v.RunID, From: "control", To: "generator", Kind: "action", Message: fmt.Sprintf("Konfiguracja: %d req/s, delay %d ms, errors %d%%", v.RPS, v.DelayMS, v.ErrorPercent)})
 		writeJSON(w, 200, v.Config)
 	})
 	mux.HandleFunc("POST /api/action", func(w http.ResponseWriter, r *http.Request) {
@@ -239,43 +255,48 @@ func (a *App) startControl(ctx context.Context, mux *http.ServeMux) error {
 		}
 		a.actionMu.Lock()
 		defer a.actionMu.Unlock()
+		if v.Action != "reset" && a.experimentBusy() {
+			writeJSON(w, 409, Object{"error": "Próba przygotowuje stan albo kończy pomiar; poczekaj lub przerwij eksperyment."})
+			return
+		}
 		result := Object{"ok": true}
 		var e error
 		switch v.Action {
 		case "scale":
-			e = a.kube.scale(v.Target, v.Replicas)
+			if v.Target == "echo" && a.getConfig().AutoscaleUntil > 0 {
+				e = fmt.Errorf("wyłącz HPA przed ręcznym skalowaniem echo")
+			} else {
+				e = a.kube.scale(v.Target, v.Replicas)
+			}
+		case "autoscale-baseline", "autoscale-on", "autoscale-off":
+			if a.experiments != nil && a.experiments.status()["active"] != "" {
+				e = fmt.Errorf("najpierw zakończ eksperyment A/B")
+			} else if v.Action == "autoscale-baseline" {
+				e = a.startCPUBaseline()
+			} else {
+				e = a.changeAutoscaling(v.Action == "autoscale-on")
+			}
 		case "restart":
 			e = a.kube.restartPod(v.Target)
 		case "enqueue":
 			result["ids"], e = a.submitTasks(v.Count, v.Failures)
 		case "job":
-			result["name"], e = a.kube.createJob(v.Failures != 0)
+			result["name"], e = a.kube.createJob(v.Failures != 0, a.getConfig().RunID)
 		case "cron":
-			e = a.kube.cron(v.Suspended, v.Schedule)
+			e = a.kube.cron(v.Suspended, v.Schedule, a.getConfig().RunID)
 		case "release-demo", "rollback-demo":
 			var image string
 			image, e = a.changeRelease(v.Action == "release-demo")
 			result["image"] = image
 		case "reset":
-			_, e = a.changeRelease(false)
-			if e != nil {
-				break
-			}
-			c := DefaultConfig()
-			e = a.kube.saveConfig(c)
-			if e == nil {
-				a.mu.Lock()
-				a.config = c
-				a.mu.Unlock()
-				for name, replicas := range map[string]int{"echo": 2, "gateway": 1, "validator": 1, "enricher": 1, "consumer": 1, "generator": 1, "result-store": 1} {
-					if e = a.kube.scale(name, replicas); e != nil {
-						break
-					}
+			if a.experiments != nil {
+				view := a.experiments.view()
+				if active, _ := view["active"].(string); active != "" {
+					_, e = a.experimentAction("abort", active, "", Config{}, 0, 0)
+					break
 				}
 			}
-			if e == nil {
-				e = a.kube.cron(true, "* * * * *")
-			}
+			e = a.resetLab()
 		default:
 			e = fmt.Errorf("nieznana akcja")
 		}
@@ -283,8 +304,28 @@ func (a *App) startControl(ctx context.Context, mux *http.ServeMux) error {
 			fail(w, e)
 			return
 		}
-		a.emit(Event{From: "control", To: v.Target, Kind: "action", Message: "Akcja: " + v.Action})
+		a.emit(Event{RunID: a.getConfig().RunID, From: "control", To: v.Target, Kind: "action", Message: fmt.Sprintf("Zlecenie: %s; cel %s; repliki %d", v.Action, v.Target, v.Replicas)})
+		if v.Action == "job" {
+			a.emit(Event{RunID: a.getConfig().RunID, From: "control", To: "job", Kind: "job-submitted", Task: fmt.Sprint(result["name"]), Message: "Utworzono Job"})
+		}
 		writeJSON(w, 200, result)
+	})
+	mux.HandleFunc("GET /api/protection", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), time.Second)
+		defer cancel()
+		req, _ := http.NewRequestWithContext(ctx, "GET", "http://gateway:8080/protection", nil)
+		resp, err := a.http.Do(req)
+		if err != nil {
+			writeJSON(w, 503, Object{"error": "gateway protection status unavailable"})
+			return
+		}
+		defer resp.Body.Close()
+		var status Object
+		if err = json.NewDecoder(io.LimitReader(resp.Body, 16384)).Decode(&status); err != nil {
+			fail(w, err)
+			return
+		}
+		writeJSON(w, resp.StatusCode, status)
 	})
 	mux.HandleFunc("GET /metrics", func(w http.ResponseWriter, r *http.Request) {
 		a.mu.RLock()

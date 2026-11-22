@@ -28,6 +28,78 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	if os.Getenv("LAB_PROOF_MODE") == "kv-drift" || os.Getenv("LAB_PROOF_MODE") == "kv-config" {
+		info, err := js.StreamInfo("KV_lab-results")
+		if err != nil {
+			return err
+		}
+		if os.Getenv("LAB_PROOF_MODE") == "kv-drift" {
+			next := info.Config
+			next.MaxAge = 48 * time.Hour
+			next.MaxBytes = 16 << 20
+			next.MaxMsgsPerSubject = 2
+			if _, err = js.UpdateStream(&next); err != nil {
+				return err
+			}
+			return nil
+		}
+		if info.Config.MaxAge != 24*time.Hour || info.Config.MaxBytes != 8<<20 || info.Config.MaxMsgsPerSubject != 1 {
+			return fmt.Errorf("task bucket configuration not reconciled")
+		}
+		return json.NewEncoder(os.Stdout).Encode(map[string]any{"ttl_hours": 24, "max_bytes": info.Config.MaxBytes, "history": info.Config.MaxMsgsPerSubject})
+	}
+	if os.Getenv("LAB_PROOF_MODE") == "outcome-isolation" {
+		trace := os.Getenv("LAB_PROOF_TRACE")
+		stream, err := js.StreamInfo("OUTCOMES")
+		if err != nil {
+			return err
+		}
+		var retained *nats.RawStreamMsg
+		for seq := stream.State.LastSeq; seq >= stream.State.FirstSeq && seq > 0; seq-- {
+			msg, err := js.GetMsg("OUTCOMES", seq)
+			if err != nil {
+				return err
+			}
+			var e struct {
+				Trace string `json:"trace"`
+			}
+			_ = json.Unmarshal(msg.Data, &e)
+			if e.Trace == trace {
+				retained = msg
+				break
+			}
+		}
+		if retained == nil {
+			return fmt.Errorf("outcome not found before eviction proof")
+		}
+		events, err := js.StreamInfo("EVENTS")
+		if err != nil {
+			return err
+		}
+		oldLast := events.State.LastSeq
+		// Append actual synthetic span messages through the broker; no purge or config change.
+		raw, _ := json.Marshal(map[string]any{"id": "retention-proof", "kind": "span", "from": "proof", "to": "proof", "time": time.Now()})
+		for range 20001 {
+			if _, err = js.Publish("lab.events", raw); err != nil {
+				return err
+			}
+		}
+		events, err = js.StreamInfo("EVENTS")
+		if err != nil {
+			return err
+		}
+		if events.State.FirstSeq <= oldLast {
+			return fmt.Errorf("did not evict prior event window")
+		}
+		after, err := js.GetMsg("OUTCOMES", retained.Sequence)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(after.Data, retained.Data) || !after.Time.Equal(retained.Time) {
+			return fmt.Errorf("independent outcome changed")
+		}
+		return json.NewEncoder(os.Stdout).Encode(map[string]any{"original_events_evicted": true, "outcome_sequence": retained.Sequence, "outcome_unchanged": true})
+	}
 	if os.Getenv("LAB_PROOF_MODE") == "delete-consumer" {
 		return js.DeleteConsumer("TASKS", "workers")
 	}
@@ -39,16 +111,27 @@ func run() error {
 		if err = json.Unmarshal([]byte(os.Getenv("LAB_PROOF_EVENT")), &event); err != nil {
 			return err
 		}
-		kv, err := js.KeyValue("lab-http-results")
+		stream, err := js.StreamInfo("OUTCOMES")
 		if err != nil {
 			return err
 		}
-		entry, err := kv.Get(fmt.Sprintf("%020d-%s", event.Time.UnixNano(), event.ID))
-		if err != nil {
-			return err
+		for seq := stream.State.LastSeq; seq >= stream.State.FirstSeq && seq > 0; seq-- {
+			msg, err := js.GetMsg("OUTCOMES", seq)
+			if err != nil {
+				return err
+			}
+			var candidate struct {
+				ID string `json:"id"`
+			}
+			if err = json.Unmarshal(msg.Data, &candidate); err != nil {
+				return err
+			}
+			if candidate.ID == event.ID {
+				hash := sha256.Sum256(msg.Data)
+				return json.NewEncoder(os.Stdout).Encode(map[string]any{"sequence": seq, "created": msg.Time, "sha256": hex.EncodeToString(hash[:])})
+			}
 		}
-		hash := sha256.Sum256(entry.Value())
-		return json.NewEncoder(os.Stdout).Encode(map[string]any{"revision": entry.Revision(), "created": entry.Created(), "sha256": hex.EncodeToString(hash[:])})
+		return fmt.Errorf("outcome no longer retained")
 	}
 	kv, err := js.KeyValue("lab-results")
 	if err != nil {

@@ -8,6 +8,7 @@ from pathlib import Path
 NS = "systems-lab"
 IMAGE = os.environ.get("LAB_IMAGE", "systems-lab:dev")
 VERSION = os.environ.get("LAB_VERSION", "dev")
+NATS_SECRET_HASH = os.environ.get("LAB_NATS_SECRET_HASH", "not-rendered-by-bootstrap")
 LABELS = {"app.kubernetes.io/part-of": "systems-lab"}
 items = []
 
@@ -27,6 +28,7 @@ for name in ("control", "observer", "workload"):
     add("ServiceAccount", name, automountServiceAccountToken=False)
 
 read_rules = [
+    {"apiGroups":["autoscaling"],"resources":["horizontalpodautoscalers"],"verbs":["get","list"]},
     {"apiGroups": [""], "resources": ["pods", "services", "events"], "verbs": ["get", "list"]},
     {"apiGroups": ["apps"], "resources": ["deployments"], "verbs": ["get", "list"]},
     {"apiGroups": ["batch"], "resources": ["jobs", "cronjobs"], "verbs": ["get", "list"]},
@@ -45,6 +47,8 @@ add("ClusterRoleBinding", "systems-lab-observer", api="rbac.authorization.k8s.io
 
 scalable = ["gateway", "validator", "enricher", "echo", "generator", "consumer", "result-store"]
 control_rules = [
+    {"apiGroups":["autoscaling"],"resources":["horizontalpodautoscalers"],"verbs":["list","create"]},
+    {"apiGroups":["autoscaling"],"resources":["horizontalpodautoscalers"],"resourceNames":["echo"],"verbs":["get","patch","delete"]},
     {"apiGroups": [""], "resources": ["configmaps"], "resourceNames": ["lab-config"], "verbs": ["get", "patch"]},
     {"apiGroups": [""], "resources": ["pods"], "verbs": ["get", "delete"]},
     {"apiGroups": [""], "resources": ["pods/log"], "verbs": ["get"]},
@@ -78,6 +82,7 @@ broker = add("Deployment", "nats", {
             "volumeMounts": [{"name": "config", "mountPath": "/etc/nats", "readOnly": True}, {"name": "data", "mountPath": "/data"}]}],
         "volumes": [{"name": "config", "configMap": {"name": "nats-config"}}, {"name": "data", "persistentVolumeClaim": {"claimName": "nats-data"}}]}}}, api="apps/v1")
 broker["spec"]["template"]["metadata"]["annotations"] = {"lab.systems/config-sha256": hashlib.sha256(nats_config["data"]["nats.conf"].encode()).hexdigest()}
+broker["spec"]["template"]["metadata"]["annotations"]["lab.systems/nats-secret-sha256"] = NATS_SECRET_HASH
 broker["metadata"]["labels"].update(labels)
 broker["metadata"]["annotations"] = {"lab.systems/description": "JetStream: trwałe kolejki, zdarzenia, wyniki i DLQ"}
 add("Service", "nats", {"selector": labels, "ports": [{"name": "client", "port": 4222, "targetPort": 4222}]})
@@ -108,10 +113,12 @@ roles = {
     "generator": ("gateway,nats,control", "Rzeczywiste żądania HTTP z limitem czasu i współbieżności"),
     "gateway": ("validator,nats", "Punkt wejścia i identyfikator korelacji żądania"),
     "validator": ("enricher,nats", "Walidacja liczby jednostek pracy; błędne żądania odrzuca HTTP 422"),
-    "enricher": ("echo,nats", "Wzbogacenie żądania o klasę pracy i identyfikator"),
+    "inventory": ("control", "Syntetyczny magazyn: równoległa gałąź fan-out"),
+    "pricing": ("control", "Syntetyczna wycena: druga gałąź fan-out"),
+    "enricher": ("echo,inventory,pricing,nats", "Wzbogacenie żądania o klasę pracy i identyfikator"),
     "echo": ("control", "Wykonanie pracy: opóźnienie, CPU, kontrolowany błąd HTTP"),
     "consumer": ("nats,gateway", "Konsument JetStream: ACK, ponowienia i dead-letter"),
-    "result-store": ("nats", "Idempotentny zapis wyników HTTP w trwałym KV JetStream"),
+    "result-store": ("nats", "Odczyt trwałego, niezależnego strumienia wyników HTTP JetStream"),
 }
 upstream = {"gateway": "validator", "validator": "enricher", "enricher": "echo"}
 def pod_spec(role):
@@ -136,7 +143,7 @@ def pod_spec(role):
 for role, (deps, description) in roles.items():
     labels = dict(LABELS, **{"app.kubernetes.io/component": role})
     obj = add("Deployment", role, {"replicas": 2 if role == "echo" else 1,
-        "selector": {"matchLabels": labels}, "template": {"metadata": {"labels": labels}, "spec": pod_spec(role)}}, api="apps/v1")
+        "selector": {"matchLabels": labels}, "template": {"metadata": {"labels": labels, "annotations": {"lab.systems/nats-secret-sha256": NATS_SECRET_HASH} if role != "web" else {}}, "spec": pod_spec(role)}}, api="apps/v1")
     obj["metadata"]["labels"].update(labels)
     obj["metadata"]["annotations"] = {"lab.systems/dependencies": deps, "lab.systems/description": description}
     obj = add("Service", role, {"selector": labels, "ports": [{"name": "http", "port": 8080, "targetPort": 8080}]})
