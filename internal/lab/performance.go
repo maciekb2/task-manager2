@@ -58,6 +58,7 @@ type ResourceSample struct {
 	CPU          *float64  `json:"cpu_cores"`
 	Memory       *float64  `json:"memory_mib"`
 	NodeCPU      *float64  `json:"node_cpu_cores"`
+	NodeWindow   string    `json:"node_window"`
 	NodeMetricAt time.Time `json:"node_metric_at"`
 	NodeMemory   *float64  `json:"node_memory_mib"`
 	Pods         []Object  `json:"pods"`
@@ -85,7 +86,7 @@ func (o *Observatory) record(e Event) {
 	key := e.Time.Unix() / 5 * 5
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	if e.Kind != "span" && e.Time.Unix() >= time.Now().Unix()-30 {
+	if e.Kind != "span" && e.Kind != "request-start" && e.Time.Unix() >= time.Now().Unix()-30 {
 		second := e.Time.Unix()
 		rows := o.edgeBuckets[second]
 		if rows == nil {
@@ -180,6 +181,9 @@ func (o *Observatory) resource(snapshot Object) {
 	components := map[string]string{}
 	if pods, ok := snapshot["pods"].([]any); ok {
 		for _, p := range pods {
+			if textField(p, "phase") != "Running" {
+				continue
+			}
 			components[textField(p, "name")] = textField(p, "component")
 			if textField(p, "phase") == "Running" {
 				sample.Expected++
@@ -226,6 +230,7 @@ func (o *Observatory) resource(snapshot Object) {
 		sample.CPU = &cpu
 		sample.Memory = &mem
 	}
+	nodeWindow := time.Duration(0)
 	nc, nm, nn := 0.0, 0.0, 0
 	for _, n := range itemsField(snapshot, "node_usage") {
 		ts := parseTime(field(n, "timestamp"))
@@ -238,12 +243,16 @@ func (o *Observatory) resource(snapshot Object) {
 			nc += c
 			nm += m / (1 << 20)
 			nn++
+			if window, err := time.ParseDuration(textField(n, "window")); err == nil && window > nodeWindow {
+				nodeWindow = window
+			}
 			if sample.NodeMetricAt.IsZero() || ts.Before(sample.NodeMetricAt) {
 				sample.NodeMetricAt = ts
 			}
 		}
 	}
 	if nn > 0 {
+		sample.NodeWindow = nodeWindow.String()
 		sample.NodeCPU = &nc
 		sample.NodeMemory = &nm
 	}

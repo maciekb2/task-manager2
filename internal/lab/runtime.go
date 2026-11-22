@@ -169,6 +169,7 @@ func (a *App) forward(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Header.Set("X-Lab-Trace", trace)
+	req.Header.Set("X-Lab-Run", runID(ctx))
 	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
 	if a.role == "enricher" {
 		_, enriched := a.operation(ctx, "enricher.decorate")
@@ -190,7 +191,7 @@ func (a *App) forward(w http.ResponseWriter, r *http.Request) {
 		body, _ = json.Marshal(Object{"error": "upstream unavailable", "trace": trace})
 	}
 	to := strings.Split(strings.TrimPrefix(next, "http://"), ":")[0]
-	a.emit(Event{Trace: trace, From: a.role, To: to, Kind: "http", TransferBytes: transferred, TransferProtocol: "http-response", Status: status, Duration: float64(time.Since(start).Microseconds()) / 1000, TargetPod: targetPod})
+	a.emit(Event{RunID: runID(ctx), Trace: trace, From: a.role, To: to, Kind: "http", TransferBytes: transferred, TransferProtocol: "http-response", Status: status, Duration: float64(time.Since(start).Microseconds()) / 1000, TargetPod: targetPod})
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Lab-Trace", trace)
 	w.Header().Set("X-Lab-Pod", os.Getenv("HOSTNAME"))
@@ -250,7 +251,11 @@ func (a *App) callGateway(ctx context.Context, from, trace string, controlledFai
 		return 0, err
 	}
 	req.Header.Set("X-Lab-Trace", trace)
+	req.Header.Set("X-Lab-Run", runID(ctx))
 	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
+	if runID(ctx) != "" {
+		a.emit(Event{RunID: runID(ctx), Trace: trace, From: from, To: "gateway", Kind: "request-start"})
+	}
 	start := time.Now()
 	resp, err := a.http.Do(req)
 	target := ""
@@ -262,7 +267,7 @@ func (a *App) callGateway(ctx context.Context, from, trace string, controlledFai
 		status = resp.StatusCode
 		target = resp.Header.Get("X-Lab-Pod")
 	}
-	a.emit(Event{Trace: trace, From: from, To: "gateway", Kind: "http", TransferBytes: transferred, TransferProtocol: "http-response", Status: status, Duration: float64(time.Since(start).Microseconds()) / 1000, TargetPod: target})
+	a.emit(Event{RunID: runID(ctx), Trace: trace, From: from, To: "gateway", Kind: "http", TransferBytes: transferred, TransferProtocol: "http-response", Status: status, Duration: float64(time.Since(start).Microseconds()) / 1000, TargetPod: target})
 	return status, err
 }
 func (a *App) generate(ctx context.Context) {
@@ -285,7 +290,7 @@ func (a *App) generate(ctx context.Context) {
 				go func() {
 					defer wg.Done()
 					defer func() { <-slots }()
-					_, _ = a.callGateway(ctx, "generator", id()+id()[:8], false)
+					_, _ = a.callGateway(runContext(ctx, c.RunID), "generator", id()+id()[:8], false)
 				}()
 			}
 		}
@@ -293,12 +298,12 @@ func (a *App) generate(ctx context.Context) {
 }
 func (a *App) runJob(ctx context.Context) error {
 	trace := id() + id()[:8]
-	ctx, finish := a.operation(traceContext(ctx, trace), "job.execute")
+	ctx, finish := a.operation(runContext(traceContext(ctx, trace), env("LAB_RUN_ID", "")), "job.execute")
 	outcome := 500
 	defer func() { finish(outcome) }()
 	status, err := a.callGateway(ctx, "job", trace, false)
 	if os.Getenv("JOB_FAIL") == "true" {
-		a.emit(Event{Trace: trace, From: "job", To: "job", Kind: "job", Status: 500, Message: "Kontrolowana awaria procesu Job"})
+		a.emit(Event{RunID: runID(ctx), Trace: trace, From: "job", To: "job", Kind: "job", Status: 500, Message: "Kontrolowana awaria procesu Job"})
 		return fmt.Errorf("kontrolowana awaria zadania demonstracyjnego")
 	}
 	if err != nil {
@@ -308,6 +313,6 @@ func (a *App) runJob(ctx context.Context) error {
 		return fmt.Errorf("gateway returned %d", status)
 	}
 	outcome = status
-	a.emit(Event{Trace: trace, From: "job", To: "job", Kind: "job", Status: status, Message: "Zakończono proces Job"})
+	a.emit(Event{RunID: runID(ctx), Trace: trace, From: "job", To: "job", Kind: "job", Status: status, Message: "Zakończono proces Job"})
 	return nil
 }

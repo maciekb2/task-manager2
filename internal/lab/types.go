@@ -17,6 +17,7 @@ const Namespace = "systems-lab"
 const ManagedLabel = "app.kubernetes.io/part-of=systems-lab"
 
 type Config struct {
+	RunID        string  `json:"run_id,omitempty"`
 	ReleaseUntil float64 `json:"release_until"`
 	PayloadBytes int     `json:"payload_bytes"`
 	RPS          int     `json:"rps"`
@@ -39,6 +40,7 @@ func (c Config) Validate() error {
 }
 
 type Event struct {
+	RunID            string    `json:"run_id,omitempty"`
 	TransferBytes    *int64    `json:"transfer_bytes,omitempty"`
 	TransferProtocol string    `json:"transfer_protocol,omitempty"`
 	ID               string    `json:"id"`
@@ -59,6 +61,7 @@ type Event struct {
 	SpanID           string    `json:"span_id,omitempty"`
 }
 type Task struct {
+	RunID        string    `json:"run_id,omitempty"`
 	ID           string    `json:"id"`
 	Trace        string    `json:"trace"`
 	State        string    `json:"state"`
@@ -83,11 +86,13 @@ type App struct {
 	configAt      time.Time
 	configLoading bool
 	events        []Event
+	eventSequence uint64
 	seen          map[string]bool
 	actionMu      sync.Mutex
 	cluster       Object
 	actionToken   string
 	perf          *Observatory
+	experiments   *experimentManager
 }
 
 func id() string { var b [12]byte; _, _ = rand.Read(b[:]); return hex.EncodeToString(b[:]) }

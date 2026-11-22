@@ -187,6 +187,7 @@ func (k *Kube) snapshot() Object {
 				v["conditions"] = field(o, "status", "conditions")
 				v["version"] = textField(o, "status", "nodeInfo", "kubeletVersion")
 			case "jobs":
+				v["run_id"] = textField(o, "metadata", "labels", "lab.systems/run-id")
 				v["active"] = numField(o, "status", "active")
 				v["succeeded"] = numField(o, "status", "succeeded")
 				v["failed"] = numField(o, "status", "failed")
@@ -267,7 +268,7 @@ func (k *Kube) restartPod(name string) error {
 	_, e = k.request("DELETE", core("pods/"+name), Object{"kind": "DeleteOptions", "apiVersion": "v1"})
 	return e
 }
-func (k *Kube) createJob(failure bool) (string, error) {
+func (k *Kube) createJob(failure bool, runID string) (string, error) {
 	cron, e := k.object(batch("cronjobs/lab-tick"))
 	if e != nil {
 		return "", e
@@ -276,6 +277,7 @@ func (k *Kube) createJob(failure bool) (string, error) {
 	raw, _ := json.Marshal(spec)
 	var jobSpec Object
 	_ = json.Unmarshal(raw, &jobSpec)
+	setRunEnv(itemsField(jobSpec, "template", "spec", "containers"), runID)
 	if failure {
 		containers := itemsField(jobSpec, "template", "spec", "containers")
 		if len(containers) > 0 {
@@ -284,14 +286,39 @@ func (k *Kube) createJob(failure bool) (string, error) {
 		}
 	}
 	name := "lab-job-" + id()[:10]
-	job := Object{"apiVersion": "batch/v1", "kind": "Job", "metadata": Object{"name": name, "labels": Object{"app.kubernetes.io/part-of": "systems-lab", "app.kubernetes.io/component": "job"}}, "spec": jobSpec}
+	job := Object{"apiVersion": "batch/v1", "kind": "Job", "metadata": Object{"name": name, "labels": Object{"app.kubernetes.io/part-of": "systems-lab", "app.kubernetes.io/component": "job", "lab.systems/run-id": runID}}, "spec": jobSpec}
 	_, e = k.request("POST", batch("jobs"), job)
 	return name, e
 }
-func (k *Kube) cron(suspended bool, schedule string) error {
+func (k *Kube) cron(suspended bool, schedule string, runID string) error {
 	if schedule != "* * * * *" && schedule != "*/5 * * * *" {
 		return fmt.Errorf("wybierz interwał 1 lub 5 minut")
 	}
-	_, e := k.request("PATCH", batch("cronjobs/lab-tick"), Object{"spec": Object{"suspend": suspended, "schedule": schedule}})
-	return e
+	cron, err := k.object(batch("cronjobs/lab-tick"))
+	if err != nil {
+		return err
+	}
+	containers := itemsField(cron, "spec", "jobTemplate", "spec", "template", "spec", "containers")
+	setRunEnv(containers, runID)
+	_, err = k.request("PATCH", batch("cronjobs/lab-tick"), Object{"spec": Object{"suspend": suspended, "schedule": schedule, "jobTemplate": Object{"metadata": Object{"labels": Object{"lab.systems/run-id": runID}}, "spec": Object{"template": Object{"spec": Object{"containers": containers}}}}}})
+	return err
+}
+func setRunEnv(containers []any, runID string) {
+	for _, raw := range containers {
+		c := raw.(map[string]any)
+		env := itemsField(c, "env")
+		found := false
+		for _, rawEnv := range env {
+			if textField(rawEnv, "name") == "LAB_RUN_ID" {
+				v := rawEnv.(map[string]any)
+				v["value"] = runID
+				delete(v, "valueFrom")
+				found = true
+			}
+		}
+		if !found {
+			env = append(env, Object{"name": "LAB_RUN_ID", "value": runID})
+		}
+		c["env"] = env
+	}
 }

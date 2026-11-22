@@ -250,3 +250,14 @@ persisted trace outcome, rather than equating task completion with storage proof
 The affected local config-restart → durability sequence passed with that wait.
 The original failed run remains visible:
 [45063952285](https://github.com/maciekb2/task-manager2/actions/runs/45063952285).
+
+## Scoped experiments — implementation checkpoint
+
+The experiment lifecycle, propagated run IDs, independent per-phase statistics,
+whole-window resource eligibility and JSON export passed unit/race checks. Focused
+runtime acceptance passed eleven checks: actual faster/slower A/B, distinct phase
+IDs, all four HTTP hops, no invented CPU sample for short runs, queue retry/native
+Job carriers, native OTel run tags, drain/seal, export and explicit controller
+interruption with sealed historical results preserved. The receipt is ignored
+`.state/experiments-smoke-results.json`; this checkpoint does not yet claim the
+later comparison UI or hosted experiment CI has been accepted.

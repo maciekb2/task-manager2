@@ -54,7 +54,7 @@ func (a *App) processMessage(ctx context.Context, msg *nats.Msg) {
 		_ = msg.Nak()
 		return
 	}
-	ctx = otel.GetTextMapPropagator().Extract(ctx, propagation.MapCarrier{"traceparent": t.TraceParent})
+	ctx = runContext(otel.GetTextMapPropagator().Extract(ctx, propagation.MapCarrier{"traceparent": t.TraceParent}), t.RunID)
 	ctx, finish := a.operation(traceContext(ctx, t.Trace), "consumer.process")
 	defer func() { finish(t.Status) }()
 	t.FirstStarted = existing.FirstStarted
@@ -68,7 +68,7 @@ func (a *App) processMessage(ctx context.Context, msg *nats.Msg) {
 		_ = msg.NakWithDelay(time.Second)
 		return
 	}
-	a.emit(Event{Trace: t.Trace, From: "nats", To: "consumer", Kind: "queue", Task: t.ID, Attempt: t.Attempt, TransferBytes: byteCount(len(msg.Data)), TransferProtocol: "nats-message", Message: "Odebrano zadanie"})
+	a.emit(Event{RunID: t.RunID, Trace: t.Trace, From: "nats", To: "consumer", Kind: "queue", Task: t.ID, Attempt: t.Attempt, TransferBytes: byteCount(len(msg.Data)), TransferProtocol: "nats-message", Message: "Odebrano zadanie"})
 	status, checkErr := a.callGateway(ctx, "consumer", t.Trace, t.Failures < 0 || int(t.Attempt) <= t.Failures)
 	t.Status = status
 	if checkErr != nil || status >= 400 {
@@ -83,7 +83,7 @@ func (a *App) processMessage(ctx context.Context, msg *nats.Msg) {
 				_ = msg.NakWithDelay(2 * time.Second)
 				return
 			}
-			a.emit(Event{Trace: t.Trace, From: "consumer", To: "dead-letter", Kind: "queue", Task: t.ID, Attempt: t.Attempt, Status: status, TransferBytes: byteCount(len(raw)), TransferProtocol: "nats-message", Message: "Limit 3 prób: zadanie w DLQ"})
+			a.emit(Event{RunID: t.RunID, Trace: t.Trace, From: "consumer", To: "dead-letter", Kind: "queue", Task: t.ID, Attempt: t.Attempt, Status: status, TransferBytes: byteCount(len(raw)), TransferProtocol: "nats-message", Message: "Limit 3 prób: zadanie w DLQ"})
 			_ = msg.AckSync()
 		} else {
 			t.State = "retry"
@@ -91,7 +91,7 @@ func (a *App) processMessage(ctx context.Context, msg *nats.Msg) {
 				_ = msg.NakWithDelay(2 * time.Second)
 				return
 			}
-			a.emit(Event{Trace: t.Trace, From: "consumer", To: "nats", Kind: "queue", Task: t.ID, Attempt: t.Attempt, Status: status, Message: "Ponowienie za 2 s"})
+			a.emit(Event{RunID: t.RunID, Trace: t.Trace, From: "consumer", To: "nats", Kind: "queue", Task: t.ID, Attempt: t.Attempt, Status: status, Message: "Ponowienie za 2 s"})
 			_ = msg.NakWithDelay(2 * time.Second)
 		}
 	} else {
@@ -100,7 +100,7 @@ func (a *App) processMessage(ctx context.Context, msg *nats.Msg) {
 			_ = msg.NakWithDelay(2 * time.Second)
 			return
 		}
-		a.emit(Event{Trace: t.Trace, From: "consumer", To: "result-store", Kind: "queue", Task: t.ID, Attempt: t.Attempt, Status: status, Message: "Wynik utrwalony; ACK"})
+		a.emit(Event{RunID: t.RunID, Trace: t.Trace, From: "consumer", To: "result-store", Kind: "queue", Task: t.ID, Attempt: t.Attempt, Status: status, Message: "Wynik utrwalony; ACK"})
 		_ = msg.AckSync()
 	}
 }
@@ -141,8 +141,8 @@ func (a *App) submitTasks(count, failures int) ([]string, error) {
 	}
 	ids := []string{}
 	for i := 0; i < count; i++ {
-		t := Task{ID: fmt.Sprintf("%013d-%s", time.Now().UnixMilli(), id()[:8]), Trace: id() + id()[:8], State: "queued", Failures: failures, Created: time.Now().UTC()}
-		ctx, finish := a.operation(traceContext(context.Background(), t.Trace), "task.enqueue")
+		t := Task{RunID: a.getConfig().RunID, ID: fmt.Sprintf("%013d-%s", time.Now().UnixMilli(), id()[:8]), Trace: id() + id()[:8], State: "queued", Failures: failures, Created: time.Now().UTC()}
+		ctx, finish := a.operation(runContext(traceContext(context.Background(), t.Trace), t.RunID), "task.enqueue")
 		carrier := propagation.MapCarrier{}
 		otel.GetTextMapPropagator().Inject(ctx, carrier)
 		t.TraceParent = carrier.Get("traceparent")
@@ -158,7 +158,7 @@ func (a *App) submitTasks(count, failures int) ([]string, error) {
 			return ids, e
 		}
 		finish(200)
-		a.emit(Event{Trace: t.Trace, From: "control", To: "nats", Kind: "queue", Task: t.ID, TransferBytes: byteCount(len(raw)), TransferProtocol: "nats-message", Message: "Zadanie opublikowane"})
+		a.emit(Event{RunID: t.RunID, Trace: t.Trace, From: "control", To: "nats", Kind: "queue", Task: t.ID, TransferBytes: byteCount(len(raw)), TransferProtocol: "nats-message", Message: "Zadanie opublikowane"})
 		ids = append(ids, t.ID)
 	}
 	return ids, nil
