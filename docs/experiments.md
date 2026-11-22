@@ -38,3 +38,7 @@ Secrets are not experiment fields.
 Use `python3 scripts/experiments-smoke.py` for actual scoped A/B, four-hop correlation,
 queue/Job trace carriers, draining/export and controller interruption acceptance.
 The script uses only this lab's kubeconfig/context/namespace and resets its controls.
+
+New scoped HTTP work requires the matching configuration epoch: the worker refreshes
+an old cache before processing a new run ID, rejects a retired/unavailable epoch
+with HTTP 409, and continues with a matching cached epoch during control outages.

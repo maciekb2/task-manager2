@@ -407,6 +407,7 @@ func (a *App) experimentAction(action, id, name string, c Config, duration, repl
 	if duration < 3 || duration > 300 || replicas < 1 || replicas > 5 {
 		return nil, fmt.Errorf("czas 3–300 s; repliki workera 1–5")
 	}
+	c.DurationSeconds = duration
 	c.RunUntil = unixSeconds(time.Now().Add(time.Duration(duration) * time.Second))
 	c.ReleaseUntil = 0
 	c.RunID = active.ID + "-" + action

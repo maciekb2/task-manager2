@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -130,5 +133,23 @@ func TestExperimentResourcesRequireWholeMeasurementWindow(t *testing.T) {
 	}
 	if rows := o.experimentResources(now.Add(-20*time.Second), now); len(rows) != 1 {
 		t.Fatal("missing or duplicated actual resource sample", rows)
+	}
+}
+
+func TestPhaseAdmissionRefreshesOldEpochAndRejectsDifferentEpoch(t *testing.T) {
+	a := &App{role: "echo", config: Config{RunID: "old"}, configAt: time.Now(), http: &http.Client{Transport: configTransport(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"run_id":"new","delay_ms":750,"concurrency":1}`))}, nil
+	})}}
+	c, err := a.configForRun(runContext(context.Background(), "new"))
+	if err != nil || c.DelayMS != 750 {
+		t.Fatal("used old scenario under new correlation", c, err)
+	}
+	if _, err = a.configForRun(runContext(context.Background(), "other")); err == nil {
+		t.Fatal("admitted a retired phase")
+	}
+	// A matching cached epoch remains usable while control is unavailable.
+	a.http = &http.Client{Transport: configTransport(func(*http.Request) (*http.Response, error) { return nil, fmt.Errorf("offline") })}
+	if _, err = a.configForRun(runContext(context.Background(), "new")); err != nil {
+		t.Fatal(err)
 	}
 }

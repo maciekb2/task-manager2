@@ -120,7 +120,7 @@ func (a *App) startControl(ctx context.Context, mux *http.ServeMux) error {
 		for i := len(events) - 1; i >= 0; i-- {
 			reverse = append(reverse, events[i])
 		}
-		writeJSON(w, 200, Object{"experiment": a.experiments.status(), "network": a.perf.networkWindow(time.Now()), "cluster": cluster, "config": config, "events": reverse, "edges": edges, "queue": a.queueState(), "metrics": a.perf.window(time.Now()), "self": Object{"release_images": Object{"current": env("LAB_IMAGE_CURRENT", ""), "candidate": env("LAB_IMAGE_CANDIDATE", "")}, "role": "control", "namespace": Namespace, "discovery": "Kubernetes API (3 s)", "transport": "NATS JetStream", "retention": "events 1h / results 24h", "version": env("LAB_VERSION", "dev")}, "at": time.Now().UTC()})
+		writeJSON(w, 200, Object{"experiment": a.experiments.status(), "network": a.perf.networkWindow(time.Now()), "cluster": cluster, "config": config, "events": reverse, "edges": edges, "queue": a.queueState(), "metrics": a.perf.window(time.Now()), "self": Object{"release_images": Object{"current": env("LAB_IMAGE_CURRENT", ""), "candidate": env("LAB_IMAGE_CANDIDATE", "")}, "role": "control", "namespace": Namespace, "discovery": "Kubernetes API (3 s)", "transport": "NATS JetStream", "retention": "EVENTS: max 1h / 20000 / 32MiB; HTTP KV: max 1h / 8MiB; task KV: max 24h / 8MiB", "version": env("LAB_VERSION", "dev")}, "at": time.Now().UTC()})
 	})
 	mux.HandleFunc("GET /api/network", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, a.perf.networkReport(time.Now())) })
 	mux.HandleFunc("GET /api/performance", func(w http.ResponseWriter, r *http.Request) {

@@ -219,7 +219,12 @@ func (a *App) echo(w http.ResponseWriter, r *http.Request) {
 	defer func() { finish(status) }()
 	r = r.WithContext(ctx)
 	trace := traceHex(ctx, traceID(r))
-	c := a.getConfig()
+	c, configErr := a.configForRun(ctx)
+	if configErr != nil {
+		status = 409
+		writeJSON(w, status, Object{"error": "phase configuration unavailable", "trace": trace})
+		return
+	}
 	_, finishDelay := a.operation(ctx, "echo.delay")
 	timer := time.NewTimer(time.Duration(c.DelayMS) * time.Millisecond)
 	defer timer.Stop()

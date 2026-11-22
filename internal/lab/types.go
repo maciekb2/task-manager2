@@ -147,21 +147,9 @@ func (a *App) getConfig() Config {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
-		req, _ := http.NewRequestWithContext(ctx, "GET", "http://control:8080/internal/config", nil)
-		resp, err := a.http.Do(req)
-		next := c
-		updated := false
-		if err == nil {
-			defer resp.Body.Close()
-			if resp.StatusCode == http.StatusOK {
-				updated = json.NewDecoder(io.LimitReader(resp.Body, 8192)).Decode(&next) == nil
-			}
-		}
+		_, _ = a.refreshConfig(ctx)
 		a.mu.Lock()
 		defer a.mu.Unlock()
-		if updated {
-			a.config = next
-		}
 		a.configAt = time.Now()
 		a.configLoading = false
 	}()
@@ -205,4 +193,36 @@ func (a *App) loadInitialConfig(ctx context.Context) error {
 		case <-time.After(time.Second):
 		}
 	}
+}
+
+// Serialize fetch + cache publication, so a slow background response cannot
+// overwrite the configuration used to admit a newly correlated phase.
+func (a *App) refreshConfig(ctx context.Context) (Config, error) {
+	a.configFetchMu.Lock()
+	defer a.configFetchMu.Unlock()
+	c, err := a.fetchConfig(ctx)
+	if err == nil {
+		a.mu.Lock()
+		a.config = c
+		a.configAt = time.Now()
+		a.mu.Unlock()
+	}
+	return c, err
+}
+func (a *App) configForRun(ctx context.Context) (Config, error) {
+	c := a.getConfig()
+	expected := runID(ctx)
+	if expected == "" || c.RunID == expected {
+		return c, nil
+	}
+	attempt, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	c, err := a.refreshConfig(attempt)
+	if err != nil {
+		return c, err
+	}
+	if c.RunID != expected {
+		return c, fmt.Errorf("phase configuration no longer active")
+	}
+	return c, nil
 }
