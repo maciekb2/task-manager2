@@ -17,6 +17,7 @@ const Namespace = "systems-lab"
 const ManagedLabel = "app.kubernetes.io/part-of=systems-lab"
 
 type Config struct {
+	AutoscaleUntil   float64 `json:"autoscale_until"`
 	TimeoutMS        int     `json:"timeout_ms"`
 	MaxInFlight      int     `json:"max_in_flight"`
 	Breaker          bool    `json:"breaker"`

@@ -48,6 +48,7 @@ func (a *App) startControl(ctx context.Context, mux *http.ServeMux) error {
 	a.experimentRoutes(mux)
 	go a.runExperiments(ctx)
 	go a.recoverRelease(ctx)
+	go a.recoverAutoscaling(ctx)
 	_, err := a.bus.js.Subscribe("lab.events", func(m *nats.Msg) {
 		var e Event
 		if json.Unmarshal(m.Data, &e) != nil {
@@ -220,6 +221,7 @@ func (a *App) startControl(ctx context.Context, mux *http.ServeMux) error {
 			writeJSON(w, 409, Object{"error": "Próba przygotowuje stan albo kończy pomiar; poczekaj lub przerwij eksperyment."})
 			return
 		}
+		v.AutoscaleUntil = a.getConfig().AutoscaleUntil
 		v.ReleaseUntil = a.getConfig().ReleaseUntil
 		v.RunID = a.getConfig().RunID
 		v.ReleaseChangedAt = a.getConfig().ReleaseChangedAt
@@ -261,7 +263,13 @@ func (a *App) startControl(ctx context.Context, mux *http.ServeMux) error {
 		var e error
 		switch v.Action {
 		case "scale":
-			e = a.kube.scale(v.Target, v.Replicas)
+			if v.Target == "echo" && a.getConfig().AutoscaleUntil > 0 {
+				e = fmt.Errorf("wyłącz HPA przed ręcznym skalowaniem echo")
+			} else {
+				e = a.kube.scale(v.Target, v.Replicas)
+			}
+		case "autoscale-on", "autoscale-off":
+			e = a.changeAutoscaling(v.Action == "autoscale-on")
 		case "restart":
 			e = a.kube.restartPod(v.Target)
 		case "enqueue":

@@ -27,6 +27,7 @@ for name in ("control", "observer", "workload"):
     add("ServiceAccount", name, automountServiceAccountToken=False)
 
 read_rules = [
+    {"apiGroups":["autoscaling"],"resources":["horizontalpodautoscalers"],"verbs":["get","list"]},
     {"apiGroups": [""], "resources": ["pods", "services", "events"], "verbs": ["get", "list"]},
     {"apiGroups": ["apps"], "resources": ["deployments"], "verbs": ["get", "list"]},
     {"apiGroups": ["batch"], "resources": ["jobs", "cronjobs"], "verbs": ["get", "list"]},
@@ -45,6 +46,8 @@ add("ClusterRoleBinding", "systems-lab-observer", api="rbac.authorization.k8s.io
 
 scalable = ["gateway", "validator", "enricher", "echo", "generator", "consumer", "result-store"]
 control_rules = [
+    {"apiGroups":["autoscaling"],"resources":["horizontalpodautoscalers"],"verbs":["list","create"]},
+    {"apiGroups":["autoscaling"],"resources":["horizontalpodautoscalers"],"resourceNames":["echo"],"verbs":["get","patch","delete"]},
     {"apiGroups": [""], "resources": ["configmaps"], "resourceNames": ["lab-config"], "verbs": ["get", "patch"]},
     {"apiGroups": [""], "resources": ["pods"], "verbs": ["get", "delete"]},
     {"apiGroups": [""], "resources": ["pods/log"], "verbs": ["get"]},

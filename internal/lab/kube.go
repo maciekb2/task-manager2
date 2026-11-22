@@ -129,7 +129,7 @@ func (k *Kube) saveConfig(c Config) error {
 func (k *Kube) snapshot() Object {
 	result := Object{"namespace": Namespace, "at": time.Now().UTC(), "errors": []string{}}
 	errors := []string{}
-	for key, path := range map[string]string{"pods": core("pods"), "services": core("services"), "deployments": apps("deployments"), "jobs": batch("jobs"), "cronjobs": batch("cronjobs"), "events": core("events"), "nodes": "/api/v1/nodes"} {
+	for key, path := range map[string]string{"autoscalers": autoscalingPath(), "pods": core("pods"), "services": core("services"), "deployments": apps("deployments"), "jobs": batch("jobs"), "cronjobs": batch("cronjobs"), "events": core("events"), "nodes": "/api/v1/nodes"} {
 		objects, err := k.list(path, key != "events" && key != "nodes")
 		if err != nil {
 			errors = append(errors, err.Error())
@@ -138,6 +138,15 @@ func (k *Kube) snapshot() Object {
 		for _, o := range objects {
 			v := Object{"name": textField(o, "metadata", "name"), "component": textField(o, "metadata", "labels", "app.kubernetes.io/component"), "created": field(o, "metadata", "creationTimestamp")}
 			switch key {
+			case "autoscalers":
+				v["min_replicas"] = field(o, "spec", "minReplicas")
+				v["max_replicas"] = field(o, "spec", "maxReplicas")
+				v["current_replicas"] = field(o, "status", "currentReplicas")
+				v["desired_replicas"] = field(o, "status", "desiredReplicas")
+				v["metrics"] = field(o, "spec", "metrics")
+				v["current_metrics"] = field(o, "status", "currentMetrics")
+				v["conditions"] = field(o, "status", "conditions")
+				v["last_scale"] = field(o, "status", "lastScaleTime")
 			case "pods":
 				v["uid"] = textField(o, "metadata", "uid")
 				imageIDs := []string{}

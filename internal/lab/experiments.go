@@ -290,6 +290,9 @@ func (a *App) stopExperimentTraffic() error {
 	return nil
 }
 func (a *App) resetLab() error {
+	if err := a.changeAutoscaling(false); err != nil {
+		return err
+	}
 	if _, err := a.changeRelease(false); err != nil {
 		return err
 	}

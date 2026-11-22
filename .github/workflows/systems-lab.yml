@@ -47,6 +47,12 @@ jobs:
         run: python3 scripts/readiness-smoke.py
       - name: Actual image update and rollback
         run: python3 scripts/release-smoke.py
+      - name: Bounded HTTP resilience and independent outcomes
+        run: python3 scripts/resilience-smoke.py
+      - name: Existing state and credential reconciliation
+        run: python3 scripts/reconcile-smoke.py
+      - name: Native CPU autoscaling and bounded recovery
+        run: python3 scripts/autoscaling-smoke.py
       - name: Scoped baseline and variant experiments
         run: python3 scripts/experiments-smoke.py
       - name: Report local development acceptance
