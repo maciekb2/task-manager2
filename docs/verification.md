@@ -89,3 +89,36 @@ fresh observations from their current run.
 CPU/RAM are resource samples with API timestamps/windows, not per-span CPU bills.
 Named spans measure selected functions' inclusive wall time. Control chart history
 is held for at most 15 minutes; Jaeger holds at most 5000 traces in volatile memory.
+
+## Navigation and live rendering refinement — 2026-11-22
+
+A single labeled navigation replaces the duplicated rail and horizontal tabs.
+Section URLs support browser back/forward. On small screens the same menu becomes
+horizontally scrollable at the top; the experiment controls follow the content.
+The topology scrolls within its panel rather than shrinking service labels.
+
+The panel polls every 3 seconds and performance history every 5 seconds while
+visible. Returning to the page refreshes state immediately. SVG elements are
+updated in place, preserving node identity, selection, keyboard focus and animation
+phase. Unchanged table markup is retained; focused interactive lists defer content
+replacement until focus leaves, and preserve their scroll offset. Inspector replica
+drafts survive polling until the selected service or actual replica count changes.
+
+Connection counts cover the available events in the last 30 seconds; moving dashed
+lines indicate events less than 5 seconds old. A lightweight local timer stops
+animation after activity expires, independently of polling/network failure. Plain
+dashed links remain declared dependencies. Reduced-motion preferences disable
+animation. CPU/RAM measurement scope remains Kubernetes only.
+
+Accepted deployed source: `ade3ef24f00e5216`. A live browser run covered the single
+menu and all six sections, history back/forward, SVG/node identity across polls,
+keyboard focus, unsaved replica input, observed HTTP activity and its animation
+expiry, all 13 topology nodes, declared-link toggling, performance chart identity
+and filter retention. All six views were checked at 390 px without page overflow;
+reduced motion disabled the view animation. Desktop and mobile screenshots were
+inspected. The first run exposed replica drafts being reset after blur; that defect
+was corrected before the successful acceptance. Unit/race checks and JS syntax
+checks passed. All twelve deployments are ready; test traffic is stopped.
+
+This is a targeted UI acceptance. Earlier HTTP/queue/Job/lesson evidence above is
+reused; the complete older cluster suite was not rerun for presentation changes.

@@ -117,6 +117,7 @@ func (a *App) startControl(ctx context.Context, mux *http.ServeMux) error {
 				edge["errors"] = edge["errors"].(int) + 1
 			}
 			edge["latency_ms"] = e.Duration
+			edge["last_event_at"] = e.Time
 		}
 
 		if len(events) > 120 {

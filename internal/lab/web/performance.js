@@ -9,7 +9,7 @@
     for(let i=0;i<4;i++){const value=max*i/3,yy=y(value);svg+=`<line x1="${left}" y1="${yy}" x2="${W-right}" y2="${yy}" stroke="#2b3845"/><text x="${left-7}" y="${yy+3}" text-anchor="end" class="axis-label">${value<10?value.toFixed(2):value.toFixed(0)}</text>`;}
     for(const line of lines){let d='',pen=false;for(const p of points){const v=line.get(p);if(v===null||v===undefined||!Number.isFinite(v)){pen=false;continue;}d+=`${pen?'L':'M'}${x(Date.parse(p.at)).toFixed(1)},${y(v).toFixed(1)} `;pen=true;}svg+=`<path d="${d}" fill="none" stroke="${line.color}" stroke-width="2"/>`;}
     svg+=`<text x="${left}" y="${H-7}" class="axis-label">${time(start)}</text><text x="${W-right}" y="${H-7}" text-anchor="end" class="axis-label">${time(end)}</text></g></svg>`;
-    $(id).innerHTML=svg+`<div class="chart-legend">${lines.map(l=>`<span><i style="background:${l.color}"></i>${esc(l.label)}</span>`).join('')}<span>${esc(unit)} · brakujące próbki pozostają przerwą</span></div>`;
+    const template=document.createElement('template');template.innerHTML=svg+`<div class="chart-legend">${lines.map(l=>`<span><i style="background:${l.color}"></i>${esc(l.label)}</span>`).join('')}<span>${esc(unit)} · brakujące próbki pozostają przerwą</span></div>`;patchSVG($(id),template.content);
   }
   function render() {
     if(!latest)return;const component=$('perfService').value,points=latest.series||[],all=component==='all';
@@ -21,16 +21,16 @@
     const last=latest.latest,age=last?.metric_at&&!last.metric_at.startsWith('0001')?Math.max(0,Math.round((Date.now()-Date.parse(last.metric_at))/1000)):null;
     $('perfFreshness').textContent=age===null?'Brak próbek Metrics API':`Próbka sprzed ${age} s · pokrycie ${last.covered_pods}/${last.expected_pods} podów · historia do 15 min`;
     const rows=(latest.functions||[]).filter(f=>all||f.name.startsWith(component+'/'));
-    $('functionTable').innerHTML=table(['Usługa / funkcja','Wywołania','Średnio','P95','Maks.','Błędy'],rows.map(f=>[esc(f.name),f.count,`${f.mean_ms.toFixed(2)} ms`,`${f.p95_ms.toFixed(2)} ms`,`${f.max_ms.toFixed(2)} ms`,f.errors]));
-    $('podPerformance').innerHTML=table(['Pod','Komponent','CPU','RAM','Czas próbki','Okno pomiaru'],(last?.pods||[]).filter(p=>all||p.component===component).map(p=>[esc(p.name),esc(p.component),`${p.cpu_millicores.toFixed(2)} mCPU`,`${p.memory_mib.toFixed(1)} MiB`,time(p.timestamp),esc(p.window)]));
+    markup('functionTable',table(['Usługa / funkcja','Wywołania','Średnio','P95','Maks.','Błędy'],rows.map(f=>[esc(f.name),f.count,`${f.mean_ms.toFixed(2)} ms`,`${f.p95_ms.toFixed(2)} ms`,`${f.max_ms.toFixed(2)} ms`,f.errors])));
+    markup('podPerformance',table(['Pod','Komponent','CPU','RAM','Czas próbki','Okno pomiaru'],(last?.pods||[]).filter(p=>all||p.component===component).map(p=>[esc(p.name),esc(p.component),`${p.cpu_millicores.toFixed(2)} mCPU`,`${p.memory_mib.toFixed(1)} MiB`,time(p.timestamp),esc(p.window)])));
   }
   async function load(){if(pending)return;pending=true;try{latest=await request('/api/performance?minutes='+$('perfWindow').value);render();}catch(e){$('perfFreshness').textContent=e.message;}finally{pending=false;}}
   window.labPerformanceState=s=>{currentState=s;const select=$('perfService'),selected=select.value,names=(s.cluster?.deployments||[]).map(d=>d.component||d.name).sort();if(select.dataset.names!==names.join(',')){select.innerHTML='<option value="all">Całe laboratorium</option>'+names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');if(names.includes(selected))select.value=selected;select.dataset.names=names.join(',');}
-    const roots=(s.events||[]).filter(e=>e.kind==='http'&&e.to==='gateway').slice(0,8);$('requestTraces').innerHTML=roots.length?roots.map(e=>`<button class="trace-choice" data-otel-trace="${esc(e.trace)}"><span>${esc(e.from)} → HTTP ${e.status}</span><code>${esc(e.trace)}</code><strong>${e.duration_ms.toFixed(1)} ms</strong></button>`).join(''):'<p class="muted">Uruchom ruch lub zadanie. Nowe żądania pojawią się tutaj.</p>';
+    const roots=(s.events||[]).filter(e=>e.kind==='http'&&e.to==='gateway').slice(0,8);markup('requestTraces',roots.length?roots.map(e=>`<button class="trace-choice" data-otel-trace="${esc(e.trace)}"><span>${esc(e.from)} → HTTP ${e.status}</span><code>${esc(e.trace)}</code><strong>${e.duration_ms.toFixed(1)} ms</strong></button>`).join(''):'<p class="muted">Uruchom ruch lub zadanie. Nowe żądania pojawią się tutaj.</p>');
     $('requestTraces').querySelectorAll('[data-otel-trace]').forEach(b=>b.onclick=()=>showTrace(b.dataset.otelTrace));
-    $('timedTasks').innerHTML=table(['Zadanie','Status','Próby','Do pierwszego podjęcia','Do wyniku','Trace'],(s.queue?.tasks||[]).map(t=>[esc(t.id),badge(t.state),t.attempt,t.first_started&&!t.first_started.startsWith('0001')?`${t.queue_ms.toFixed(1)} ms`:'—',t.finished&&!t.finished.startsWith('0001')?`${t.total_ms.toFixed(1)} ms`:'W toku',`<button class="text-button" data-task-otel="${esc(t.trace)}">Otwórz →</button>`]));
+    markup('timedTasks',table(['Zadanie','Status','Próby','Do pierwszego podjęcia','Do wyniku','Trace'],(s.queue?.tasks||[]).map(t=>[esc(t.id),badge(t.state),t.attempt,t.first_started&&!t.first_started.startsWith('0001')?`${t.queue_ms.toFixed(1)} ms`:'—',t.finished&&!t.finished.startsWith('0001')?`${t.total_ms.toFixed(1)} ms`:'W toku',`<button class="text-button" data-task-otel="${esc(t.trace)}">Otwórz →</button>`])));
     $('timedTasks').querySelectorAll('[data-task-otel]').forEach(b=>b.onclick=()=>showTrace(b.dataset.taskOtel));
-    $('timedJobs').innerHTML=table(['Job','Wynik','Start','Zakończenie','Czas','Trace próby'],(s.cluster?.jobs||[]).map(j=>{const finished=j.finished||(j.conditions||[]).find(c=>c.type==='Failed'&&c.status==='True')?.lastTransitionTime;const wall=j.started?((Date.parse(finished||s.at)-Date.parse(j.started))/1000).toFixed(1)+' s'+(finished?'':' (w toku)'):'—';const event=s.events.find(e=>e.kind==='job'&&e.pod.startsWith(j.name+'-'));return [esc(j.name),badge(j.succeeded?'completed':finished?'failed':'processing'),time(j.started),time(finished),wall,event?`<button class="text-button" data-job-otel="${esc(event.trace)}">Otwórz →</button>`:'Brak próby w ostatnich zdarzeniach'];}));
+    markup('timedJobs',table(['Job','Wynik','Start','Zakończenie','Czas','Trace próby'],(s.cluster?.jobs||[]).map(j=>{const finished=j.finished||(j.conditions||[]).find(c=>c.type==='Failed'&&c.status==='True')?.lastTransitionTime;const wall=j.started?((Date.parse(finished||s.at)-Date.parse(j.started))/1000).toFixed(1)+' s'+(finished?'':' (w toku)'):'—';const event=s.events.find(e=>e.kind==='job'&&e.pod.startsWith(j.name+'-'));return [esc(j.name),badge(j.succeeded?'completed':finished?'failed':'processing'),time(j.started),time(finished),wall,event?`<button class="text-button" data-job-otel="${esc(event.trace)}">Otwórz →</button>`:'Brak próby w ostatnich zdarzeniach'];})));
     $('timedJobs').querySelectorAll('[data-job-otel]').forEach(b=>b.onclick=()=>showTrace(b.dataset.jobOtel));
   };
   async function showTrace(id) {
@@ -47,5 +47,5 @@
   window.showPerformanceTrace=showTrace;
   $('perfWindow').onchange=load;$('perfService').onchange=render;
   window.addEventListener('lab-tab',e=>{if(e.detail==='performance')load();});
-  setInterval(()=>{if($('view-performance').classList.contains('active'))load();},5000);
+  setInterval(()=>{if(!document.hidden&&$('view-performance').classList.contains('active'))load();},5000);
 })();
