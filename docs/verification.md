@@ -358,3 +358,19 @@ then exposed an existing probe race: `/api/state` legitimately reports cluster=n
 until observer discovery arrives; smoke's predicate dereferenced that null. The
 waiters now wait explicitly for discovery, preserving their time bounds and real
 assertions. This is an initialization state, not evidence of a failed discovery.
+
+### Final UI and basic acceptance
+
+Fifteen basic cluster checks passed at source `192e934551a2c720`, including all
+14 expected deployments, access boundaries, actual chain/503/trace/result, scaling,
+pod replacement, backlog/retry/DLQ, successful/failed Jobs, real CronJob scheduling
+and baseline restoration. At `3e1340296c56dfa2`, browser acceptance passed mobile
+containment (390 px), actual fan-out edges, protection controls and HPA creation.
+Both HPA API actions and the baseline UI preserved an active experiment instead
+of aborting it. Initial native HPA desiredReplicas=0 precedes its first valid
+recommendation; the UI now displays waiting and omits that zero from its chart.
+That final small display change awaits integration/deployment acceptance.
+
+Secret scan: Gitleaks 8.30.1 over the ten new commits (about 144 KiB) reported no
+leaks. This is scoped source evidence, not a claim about arbitrary historical
+repositories or production secret hygiene.

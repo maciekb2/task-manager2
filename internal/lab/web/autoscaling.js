@@ -5,9 +5,10 @@
  $('hpaDisable').onclick=()=>act({action:'autoscale-off'},'Usunięto HPA echo; przywracane są 2 repliki');
  window.labAutoscalingState=s=>{
   const h=(s.cluster?.autoscalers||[]).find(h=>h.name==='echo'),d=(s.cluster?.deployments||[]).find(d=>d.name==='echo'),until=s.config.autoscale_until||0;
-  $('hpaStatus').textContent=h?`HPA: ${h.current_replicas??'—'} aktualnych → ${h.desired_replicas??'—'} rekomendowanych · limit ${h.min_replicas}–${h.max_replicas} · ostatnia zmiana ${time(h.last_scale)}${until?' · koniec demo za '+Math.max(0,Math.ceil(until-Date.now()/1000))+' s':''}`:until?'Zapisany zamiar HPA — czekam na potwierdzenie zasobu w discovery.':'HPA wyłączone. Skalowanie ręczne.';
+  const recommendation=h&&h.desired_replicas>=h.min_replicas?h.desired_replicas:null;
+  $('hpaStatus').textContent=h?`HPA: ${h.current_replicas??'—'} aktualnych → ${recommendation??'— (oczekiwanie na pomiar)'} rekomendowanych · limit ${h.min_replicas}–${h.max_replicas} · ostatnia zmiana ${time(h.last_scale)}${until?' · koniec demo za '+Math.max(0,Math.ceil(until-Date.now()/1000))+' s':''}`:until?'Zapisany zamiar HPA — czekam na potwierdzenie zasobu w discovery.':'HPA wyłączone. Skalowanie ręczne.';
   markup('hpaEvidence',h?table(['Warunek','Stan','Powód','Wyjaśnienie'],(h.conditions||[]).map(c=>[esc(c.type),esc(c.status),esc(c.reason),esc(c.message)]))+`<p class="muted">CPU raportowane przez HPA: <code>${esc(JSON.stringify(h.current_metrics||[]))}</code>. Cel: 200m CPU/pod (wartość bezwzględna, nie procent requests).</p>`:'');
-  const at=Date.parse(s.cluster?.at||'');if(Number.isFinite(at)&&d&&samples.at(-1)?.at!==at){samples.push({at,ready:d.ready||0,desired:d.replicas||0,hpa:h?.desired_replicas??null});if(samples.length>100)samples.shift();}
+  const at=Date.parse(s.cluster?.at||'');if(Number.isFinite(at)&&d&&samples.at(-1)?.at!==at){samples.push({at,ready:d.ready||0,desired:d.replicas||0,hpa:recommendation});if(samples.length>100)samples.shift();}
   if(!samples.length)return;
   const W=750,H=160,L=28,T=12,B=25,start=samples[0].at,end=Math.max(start+1000,samples.at(-1).at),x=t=>L+(t-start)/(end-start)*(W-L-12),y=v=>H-B-v/5*(H-T-B);
   const lines=[['desired','Zadane w Deployment','#6dacf5'],['ready','Rzeczywiście gotowe','#6fe5bd'],['hpa','Rekomendacja HPA','#f0bc6a']];
