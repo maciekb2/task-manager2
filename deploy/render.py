@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Render the complete local lab as a Kubernetes List. No Helm/Python packages."""
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -56,7 +57,7 @@ add("RoleBinding", "control", api="rbac.authorization.k8s.io/v1",
     roleRef={"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": "control"},
     subjects=[{"kind": "ServiceAccount", "name": "control", "namespace": NS}])
 
-add("ConfigMap", "nats-config", data={"nats.conf": """port: 4222
+nats_config = add("ConfigMap", "nats-config", data={"nats.conf": """port: 4222
 http_port: 8222
 authorization { token: $NATS_TOKEN }
 jetstream { store_dir: /data/jetstream, max_memory_store: 64MB, max_file_store: 512MB }
@@ -76,6 +77,7 @@ broker = add("Deployment", "nats", {
             "readinessProbe": {"httpGet": {"path": "/healthz", "port": 8222}, "periodSeconds": 3},
             "volumeMounts": [{"name": "config", "mountPath": "/etc/nats", "readOnly": True}, {"name": "data", "mountPath": "/data"}]}],
         "volumes": [{"name": "config", "configMap": {"name": "nats-config"}}, {"name": "data", "persistentVolumeClaim": {"claimName": "nats-data"}}]}}}, api="apps/v1")
+broker["spec"]["template"]["metadata"]["annotations"] = {"lab.systems/config-sha256": hashlib.sha256(nats_config["data"]["nats.conf"].encode()).hexdigest()}
 broker["metadata"]["labels"].update(labels)
 broker["metadata"]["annotations"] = {"lab.systems/description": "JetStream: trwałe kolejki, zdarzenia, wyniki i DLQ"}
 add("Service", "nats", {"selector": labels, "ports": [{"name": "client", "port": 4222, "targetPort": 4222}]})
@@ -93,6 +95,7 @@ jaeger = add("Deployment", "jaeger", {"replicas": 1, "selector": {"matchLabels":
             "readinessProbe": {"httpGet": {"path": "/tracing/", "port": 16686}, "periodSeconds": 3},
             "volumeMounts": [{"name": "config", "mountPath": "/config", "readOnly": True}]}],
         "volumes": [{"name": "config", "configMap": {"name": "jaeger-config"}}]}}}, api="apps/v1")
+jaeger["spec"]["template"]["metadata"]["annotations"] = {"lab.systems/config-sha256": hashlib.sha256(Path(__file__).with_name("jaeger.yaml").read_bytes()).hexdigest()}
 jaeger["metadata"]["labels"].update(labels)
 jaeger["metadata"]["annotations"] = {"lab.systems/description": "OpenTelemetry: standardowe ślady i czasy spanów; lokalna pamięć 5000 trace"}
 add("Service", "jaeger", {"selector": labels, "ports": [{"name": "query", "port": 16686}, {"name": "otlp-http", "port": 4318}]})

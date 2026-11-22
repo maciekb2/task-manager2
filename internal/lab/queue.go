@@ -3,6 +3,7 @@ package lab
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/nats-io/nats.go"
 	"go.opentelemetry.io/otel"
@@ -68,11 +69,7 @@ func (a *App) processMessage(ctx context.Context, msg *nats.Msg) {
 		return
 	}
 	a.emit(Event{Trace: t.Trace, From: "nats", To: "consumer", Kind: "queue", Task: t.ID, Attempt: t.Attempt, TransferBytes: byteCount(len(msg.Data)), TransferProtocol: "nats-message", Message: "Odebrano zadanie"})
-	status := 503
-	var checkErr error
-	if t.Failures >= 0 && int(t.Attempt) > t.Failures {
-		status, checkErr = a.callGateway(ctx, "consumer", t.Trace)
-	}
+	status, checkErr := a.callGateway(ctx, "consumer", t.Trace, t.Failures < 0 || int(t.Attempt) <= t.Failures)
 	t.Status = status
 	if checkErr != nil || status >= 400 {
 		if t.Attempt >= 3 {
@@ -176,11 +173,11 @@ func (a *App) startResultStore(mux *http.ServeMux) error {
 	}
 	_, err = a.bus.js.Subscribe("lab.events", func(m *nats.Msg) {
 		var e Event
-		if json.Unmarshal(m.Data, &e) != nil || e.From != "gateway" || e.Kind != "http" {
+		if json.Unmarshal(m.Data, &e) != nil || e.From != "gateway" || e.Kind != "http" || time.Since(e.Time) > time.Hour {
 			return
 		}
 		raw, _ := json.Marshal(e)
-		if _, err := kv.Put(fmt.Sprintf("%020d-%s", e.Time.UnixNano(), e.ID), raw); err != nil {
+		if _, err := kv.Create(fmt.Sprintf("%020d-%s", e.Time.UnixNano(), e.ID), raw); err != nil && !errors.Is(err, nats.ErrKeyExists) {
 			fmt.Println("result-store:", err)
 		}
 	}, nats.OrderedConsumer(), nats.DeliverAll())
@@ -204,7 +201,7 @@ func (a *App) startResultStore(mux *http.ServeMux) error {
 				entry, e := kv.Get(key)
 				if e == nil {
 					var event Event
-					if json.Unmarshal(entry.Value(), &event) == nil {
+					if json.Unmarshal(entry.Value(), &event) == nil && time.Since(event.Time) <= time.Hour {
 						items = append(items, event)
 					}
 				}

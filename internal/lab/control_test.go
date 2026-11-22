@@ -35,11 +35,11 @@ func TestControlRejectsCrossSiteAndRemoteActions(t *testing.T) {
 func TestTrafficHasResourceAndTimeBounds(t *testing.T) {
 	c := DefaultConfig()
 	c.RPS = 50
-	c.RunUntil = time.Now().Add(60 * time.Second).Unix()
+	c.RunUntil = unixSeconds(time.Now().Add(60 * time.Second))
 	if e := c.Validate(); e != nil {
 		t.Fatal(e)
 	}
-	for _, mutate := range []func(*Config){func(c *Config) { c.PayloadBytes = -1 }, func(c *Config) { c.PayloadBytes = 8193 }, func(c *Config) { c.RPS = 51 }, func(c *Config) { c.Concurrency = 0 }, func(c *Config) { c.DelayMS = 3001 }, func(c *Config) { c.CPUMS = 51 }, func(c *Config) { c.ErrorPercent = 101 }, func(c *Config) { c.RunUntil = time.Now().Add(time.Hour).Unix() }, func(c *Config) { c.RunUntil = 0 }} {
+	for _, mutate := range []func(*Config){func(c *Config) { c.PayloadBytes = -1 }, func(c *Config) { c.PayloadBytes = 8193 }, func(c *Config) { c.RPS = 51 }, func(c *Config) { c.Concurrency = 0 }, func(c *Config) { c.DelayMS = 3001 }, func(c *Config) { c.CPUMS = 51 }, func(c *Config) { c.ErrorPercent = 101 }, func(c *Config) { c.RunUntil = unixSeconds(time.Now().Add(time.Hour)) }, func(c *Config) { c.RunUntil = 0 }} {
 		bad := c
 		mutate(&bad)
 		if bad.Validate() == nil {
@@ -52,6 +52,11 @@ func TestScaleCannotReachInfrastructureOrForeignWorkloads(t *testing.T) {
 	for _, name := range []string{"nats", "control", "observer", "web", "kube-system", "../echo"} {
 		if k.scale(name, 1) == nil {
 			t.Fatalf("allowed scale of %q", name)
+		}
+	}
+	for _, replicas := range []int{0, 2, 5} {
+		if k.scale("generator", replicas) == nil {
+			t.Fatal("generator cap bypassed", replicas)
 		}
 	}
 	if k.scale("echo", 6) == nil {

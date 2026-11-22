@@ -1,6 +1,9 @@
 # Systems Lab
 
-An interactive, local Kubernetes playground. Generate real HTTP traffic, inspect
+A local Kubernetes portfolio demonstrator for designing, observing and diagnosing
+distributed systems. [Accepted goal and roadmap](docs/roadmap.md).
+
+An interactive Kubernetes playground. Generate real HTTP traffic, inspect
 live cluster resources, scale services, replace pods, build a queue backlog and
 watch Kubernetes Jobs run. Everything needed to create and configure the lab
 lives in this repository.

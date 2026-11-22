@@ -226,6 +226,9 @@ func (k *Kube) snapshot() Object {
 var mutable = map[string]bool{"echo": true, "gateway": true, "validator": true, "enricher": true, "result-store": true, "generator": true, "consumer": true}
 
 func (k *Kube) scale(name string, replicas int) error {
+	if name == "generator" && replicas != 1 {
+		return fmt.Errorf("generator ma jedną replikę: limit ruchu dotyczy całego eksperymentu")
+	}
 	if !mutable[name] || replicas < 0 || replicas > 5 {
 		return fmt.Errorf("dozwolone tylko workloady laboratorium i 0–5 replik")
 	}

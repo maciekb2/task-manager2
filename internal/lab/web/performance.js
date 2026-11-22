@@ -4,20 +4,21 @@
     const values=points.flatMap(p=>lines.map(l=>l.get(p))).filter(v=>v!==null&&v!==undefined&&Number.isFinite(v));
     if(!values.length){$(id).innerHTML='<div class="empty">Brak świeżych próbek. Metrics Server potrzebuje chwili po uruchomieniu podów.</div>';return;}
     const W=550,H=190,left=48,right=12,top=12,bottom=34,max=Math.max(...values)*1.12||1;
-    const times=points.map(p=>Date.parse(p.at)),start=Math.min(...times),end=Math.max(...times);const x=t=>left+(t-start)/Math.max(end-start,1000)*(W-left-right),y=v=>H-bottom-v/max*(H-top-bottom);
+    const series=lines.map(line=>{const byTime=new Map();for(const p of points){const raw=line.get(p),valid=raw!==null&&raw!==undefined&&Number.isFinite(raw);const measured=line.at?.(p);const at=Date.parse(valid&&measured&&!measured.startsWith('0001')?measured:p.at);if(Number.isFinite(at))byTime.set(at,{at,value:valid?raw:null});}return [...byTime.values()].sort((a,b)=>a.at-b.at);});
+    const times=series.flatMap(rows=>rows.map(p=>p.at)),start=Math.min(...times),end=Math.max(...times);const x=t=>left+(t-start)/Math.max(end-start,1000)*(W-left-right),y=v=>H-bottom-v/max*(H-top-bottom);
     let svg=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Wykres ${esc(unit)}"><g>`;
     for(let i=0;i<4;i++){const value=max*i/3,yy=y(value);svg+=`<line x1="${left}" y1="${yy}" x2="${W-right}" y2="${yy}" stroke="#2b3845"/><text x="${left-7}" y="${yy+3}" text-anchor="end" class="axis-label">${value<10?value.toFixed(2):value.toFixed(0)}</text>`;}
-    for(const line of lines){let d='',pen=false;for(const p of points){const v=line.get(p);if(v===null||v===undefined||!Number.isFinite(v)){pen=false;continue;}d+=`${pen?'L':'M'}${x(Date.parse(p.at)).toFixed(1)},${y(v).toFixed(1)} `;pen=true;}svg+=`<path d="${d}" fill="none" stroke="${line.color}" stroke-width="2"/>`;}
+    for(const [index,line] of lines.entries()){let d='',pen=false;for(const p of series[index]){const v=p.value;if(v===null||v===undefined||!Number.isFinite(v)){pen=false;continue;}d+=`${pen?'L':'M'}${x(p.at).toFixed(1)},${y(v).toFixed(1)} `;pen=true;}svg+=`<path d="${d}" fill="none" stroke="${line.color}" stroke-width="2"/>`;}
     svg+=`<text x="${left}" y="${H-7}" class="axis-label">${time(start)}</text><text x="${W-right}" y="${H-7}" text-anchor="end" class="axis-label">${time(end)}</text></g></svg>`;
-    const template=document.createElement('template');template.innerHTML=svg+`<div class="chart-legend">${lines.map(l=>`<span><i style="background:${l.color}"></i>${esc(l.label)}</span>`).join('')}<span>${esc(unit)} · brakujące próbki pozostają przerwą</span></div>`;patchSVG($(id),template.content);
+    const template=document.createElement('template');template.innerHTML=svg+`<div class="chart-legend">${lines.map(l=>`<span><i style="background:${l.color}"></i>${esc(l.label)}</span>`).join('')}<span>${esc(unit)} · brakujące próbki pozostają przerwą · CPU/RAM: czas Metrics API</span></div>`;patchSVG($(id),template.content);
   }
   function render() {
     if(!latest)return;const component=$('perfService').value,points=latest.series||[],all=component==='all';
     const get=key=>p=>all?p[key]:p.components?.[component]?.[key];
-    plot('cpuChart',points,[{label:all?'Suma podów laboratorium':component,color:'#6fe5bd',get:get('cpu_cores')},...(all?[{label:'Węzeł Kubernetes (z control plane)',color:'#6dacf5',get:p=>p.node_cpu_cores}]:[])],'rdzenie CPU');
-    plot('memoryChart',points,[{label:all?'Suma podów laboratorium':component,color:'#6fe5bd',get:get('memory_mib')},...(all?[{label:'Węzeł Kubernetes',color:'#6dacf5',get:p=>p.node_memory_mib}]:[])],'MiB');
-    plot('trafficChart',points,[{label:'Cały łańcuch HTTP',color:'#6fe5bd',get:p=>p.rps}],'żądania/s');
-    plot('latencyChart',points,[{label:'P95 całego żądania',color:'#f0bc6a',get:p=>p.p95_ms}],'ms');
+    plot('cpuChart',points,[{label:all?'Suma podów laboratorium':component,color:'#6fe5bd',get:get('cpu_cores'),at:p=>all?p.metric_at:p.components?.[component]?.metric_at},...(all?[{label:'Węzeł Kubernetes (z control plane)',color:'#6dacf5',get:p=>p.node_cpu_cores,at:p=>p.node_metric_at}]:[])],'rdzenie CPU');
+    plot('memoryChart',points,[{label:all?'Suma podów laboratorium':component,color:'#6fe5bd',get:get('memory_mib'),at:p=>all?p.metric_at:p.components?.[component]?.metric_at},...(all?[{label:'Węzeł Kubernetes',color:'#6dacf5',get:p=>p.node_memory_mib,at:p=>p.node_metric_at}]:[])],'MiB');
+    plot('trafficChart',latest.traffic_series||points,[{label:'Cały łańcuch HTTP',color:'#6fe5bd',get:p=>p.rps}],'żądania/s');
+    plot('latencyChart',latest.traffic_series||points,[{label:'P95 całego żądania',color:'#f0bc6a',get:p=>p.p95_ms}],'ms');
     const last=latest.latest,age=last?.metric_at&&!last.metric_at.startsWith('0001')?Math.max(0,Math.round((Date.now()-Date.parse(last.metric_at))/1000)):null;
     $('perfFreshness').textContent=age===null?'Brak próbek Metrics API':`Próbka sprzed ${age} s · pokrycie ${last.covered_pods}/${last.expected_pods} podów · historia do 15 min`;
     const rows=(latest.functions||[]).filter(f=>all||f.name.startsWith(component+'/'));

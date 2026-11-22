@@ -51,6 +51,9 @@ try:
     assert all(e['transfer_bytes']==sent[0]['transfer_bytes']>0 for e in received)
     assert all('transfer_bytes' not in e for e in events if 'Ponowienie' in e.get('message',''))
     checks.append('one actual publication, two same-sized deliveries, NAK excluded')
+    for status in [503,200]:
+        assert {'consumer','gateway','validator','enricher'}<={e['from'] for e in events if e['kind']=='http' and e['status']==status},'queue attempt skipped real HTTP chain'
+    checks.append('failed and successful queue attempts both traverse actual HTTP chain')
     wait('JetStream throughput reaches closed network bucket',lambda:api('/api/network'),lambda r:r['recent']['queue_bytes_per_second']>0 or r['summary']['queue_bytes_per_second']>0)
     wait('stopped HTTP transfer falls to zero in recent bucket',lambda:api('/api/network'),lambda r:r['recent']['http_bytes_per_second']==0,seconds=20)
 finally:

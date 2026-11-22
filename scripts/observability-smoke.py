@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Focused acceptance for the learning/observability release; synthetic cluster only."""
 import json
+import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 import urllib.request
 import urllib.error
 
-BASE='http://127.0.0.1:18085'
+BASE=os.environ.get('LAB_URL','http://127.0.0.1:18085').rstrip('/')
 ROOT=Path(__file__).resolve().parent.parent
 checks=[]
 def api(path,data=None):

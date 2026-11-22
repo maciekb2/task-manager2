@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"sync"
@@ -16,13 +17,13 @@ const Namespace = "systems-lab"
 const ManagedLabel = "app.kubernetes.io/part-of=systems-lab"
 
 type Config struct {
-	PayloadBytes int   `json:"payload_bytes"`
-	RPS          int   `json:"rps"`
-	Concurrency  int   `json:"concurrency"`
-	DelayMS      int   `json:"delay_ms"`
-	ErrorPercent int   `json:"error_percent"`
-	CPUMS        int   `json:"cpu_ms"`
-	RunUntil     int64 `json:"run_until"`
+	PayloadBytes int     `json:"payload_bytes"`
+	RPS          int     `json:"rps"`
+	Concurrency  int     `json:"concurrency"`
+	DelayMS      int     `json:"delay_ms"`
+	ErrorPercent int     `json:"error_percent"`
+	CPUMS        int     `json:"cpu_ms"`
+	RunUntil     float64 `json:"run_until"`
 }
 
 func DefaultConfig() Config { return Config{Concurrency: 4, DelayMS: 40} }
@@ -30,7 +31,7 @@ func (c Config) Validate() error {
 	if c.PayloadBytes < 0 || c.PayloadBytes > 8192 || c.RPS < 0 || c.RPS > 50 || c.Concurrency < 1 || c.Concurrency > 20 || c.DelayMS < 0 || c.DelayMS > 3000 || c.ErrorPercent < 0 || c.ErrorPercent > 100 || c.CPUMS < 0 || c.CPUMS > 50 {
 		return fmt.Errorf("parametry poza zakresem: rps 0–50, concurrency 1–20, delay 0–3000 ms, error 0–100%%, cpu 0–50 ms, payload 0–8192 B")
 	}
-	if c.RPS > 0 && (c.RunUntil <= time.Now().Unix() || c.RunUntil > time.Now().Add(301*time.Second).Unix()) {
+	if c.RPS > 0 && (c.RunUntil <= unixSeconds(time.Now()) || c.RunUntil > unixSeconds(time.Now().Add(301*time.Second))) {
 		return fmt.Errorf("ruch wymaga czasu działania do 300 sekund")
 	}
 	return nil
@@ -72,19 +73,20 @@ type Task struct {
 	QueueMS      float64   `json:"queue_ms"`
 }
 type App struct {
-	role        string
-	bus         *Bus
-	kube        *Kube
-	http        *http.Client
-	mu          sync.RWMutex
-	config      Config
-	configAt    time.Time
-	events      []Event
-	seen        map[string]bool
-	actionMu    sync.Mutex
-	cluster     Object
-	actionToken string
-	perf        *Observatory
+	role          string
+	bus           *Bus
+	kube          *Kube
+	http          *http.Client
+	mu            sync.RWMutex
+	config        Config
+	configAt      time.Time
+	configLoading bool
+	events        []Event
+	seen          map[string]bool
+	actionMu      sync.Mutex
+	cluster       Object
+	actionToken   string
+	perf          *Observatory
 }
 
 func id() string { var b [12]byte; _, _ = rand.Read(b[:]); return hex.EncodeToString(b[:]) }
@@ -114,29 +116,44 @@ func (a *App) emit(e Event) {
 		fmt.Println("event publish:", err)
 	}
 }
+func unixSeconds(at time.Time) float64     { return float64(at.UnixMicro()) / 1e6 }
+func (c Config) running(at time.Time) bool { return c.RPS > 0 && unixSeconds(at) < c.RunUntil }
+
+// Data-plane work never waits for the control service. A single bounded refresh
+// updates a valid cached snapshot; failures back off while its deadline still applies.
 func (a *App) getConfig() Config {
-	a.mu.RLock()
-	c, at := a.config, a.configAt
-	a.mu.RUnlock()
-	if a.role == "control" || time.Since(at) < time.Second {
+	a.mu.Lock()
+	c := a.config
+	interval := time.Second
+	if a.role == "generator" {
+		interval = 250 * time.Millisecond
+	}
+	if a.role == "control" || a.configLoading || time.Since(a.configAt) < interval {
+		a.mu.Unlock()
 		return c
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, "GET", "http://control:8080/internal/config", nil)
-	resp, err := a.http.Do(req)
-	if err == nil {
-		defer resp.Body.Close()
-		if resp.StatusCode == 200 {
-			var next Config
-			if json.NewDecoder(resp.Body).Decode(&next) == nil {
-				a.mu.Lock()
-				a.config = next
-				a.configAt = time.Now()
-				a.mu.Unlock()
-				return next
+	a.configLoading = true
+	a.mu.Unlock()
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		req, _ := http.NewRequestWithContext(ctx, "GET", "http://control:8080/internal/config", nil)
+		resp, err := a.http.Do(req)
+		next := c
+		updated := false
+		if err == nil {
+			defer resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				updated = json.NewDecoder(io.LimitReader(resp.Body, 8192)).Decode(&next) == nil
 			}
 		}
-	}
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		if updated {
+			a.config = next
+		}
+		a.configAt = time.Now()
+		a.configLoading = false
+	}()
 	return c
 }

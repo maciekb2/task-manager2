@@ -101,24 +101,7 @@ func (a *App) startControl(ctx context.Context, mux *http.ServeMux) error {
 		config := a.config
 		a.mu.RUnlock()
 		sort.Slice(events, func(i, j int) bool { return events[i].Time.Before(events[j].Time) })
-		edges := map[string]Object{}
-		for _, e := range events {
-			if time.Since(e.Time) > 30*time.Second {
-				continue
-			}
-			key := e.From + "→" + e.To
-			edge, ok := edges[key]
-			if !ok {
-				edge = Object{"from": e.From, "to": e.To, "count": 0, "errors": 0, "latency_ms": 0.0, "kind": e.Kind}
-				edges[key] = edge
-			}
-			edge["count"] = edge["count"].(int) + 1
-			if e.Status >= 400 {
-				edge["errors"] = edge["errors"].(int) + 1
-			}
-			edge["latency_ms"] = e.Duration
-			edge["last_event_at"] = e.Time
-		}
+		edges := a.perf.edges(time.Now())
 
 		if len(events) > 120 {
 			events = events[len(events)-120:]
@@ -214,7 +197,7 @@ func (a *App) startControl(ctx context.Context, mux *http.ServeMux) error {
 				fail(w, fmt.Errorf("duration 1–300 s"))
 				return
 			}
-			v.RunUntil = time.Now().Add(time.Duration(v.Duration) * time.Second).Unix()
+			v.RunUntil = unixSeconds(time.Now().Add(time.Duration(v.Duration) * time.Second))
 		} else {
 			v.RunUntil = 0
 		}

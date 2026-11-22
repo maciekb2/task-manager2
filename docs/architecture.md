@@ -28,8 +28,9 @@ This local demo shares a NATS account; it is not a security-isolated tenant mode
 fixes its target to validator, which fixes its target to enricher, which fixes its
 target to echo. No caller-supplied URL is fetched. Requests have a 32-character
 correlation identifier, independently timed hops and observed destination pod IDs.
-Parameters are read from the controller's persisted ConfigMap; workers cache the
-configuration for at most a second when control is reachable. If control is
+Parameters are read from the controller's persisted ConfigMap; workers refresh their cached configuration asynchronously; the generator refreshes
+with a 250 ms interval and other data-plane roles with a one-second interval when
+control is reachable. Failed refreshes back off and never block request pacing. If control is
 unavailable they retain their last configuration. Generator deadlines remain
 absolute and bounded even during a controller interruption.
 
@@ -54,7 +55,9 @@ Neither discovery annotations nor dependency links prove traffic occurred.
 * HTTP errors are outcomes, not random synthetic task success. For queued checks,
   a non-successful HTTP result triggers retry and ultimately DLQ.
 * `EVENTS` retains correlated hop/action events. Control replays them after restart;
-  its in-memory recent ring is bounded to 10000 display events; the 30-second metrics window is aggregated independently. Result-store persists gateway
+  its in-memory recent ring is bounded to 10000 display events; traffic metrics and
+  topology windows are aggregated independently. Topology uses 30 closed seconds
+  and a current-activity timestamp, excluding function spans from network edges. Result-store persists gateway
   outcomes separately in `lab-http-results` KV. Storage has explicit time/size bounds.
 
 ## Kubernetes Job/CronJob
@@ -111,3 +114,9 @@ Traffic and p95 use closed, aligned 30-second windows (at most five seconds behi
 now), independent of the display event ring. P95 uses empirical nearest rank.
 Functions aggregate measured wall time; they are selected instrumented operations,
 not a statistical profiler of arbitrary Go functions.
+
+NATS and Jaeger configuration hashes are part of their pod templates, so a changed
+configuration triggers a real rollout on reconciliation. A single generator replica
+maintains the global configured traffic cap; worker/consumer replicas remain
+independently scalable. HTTP outcome keys are create-only on replay, and retrieval
+filters by original event age in addition to the KV retention budget.

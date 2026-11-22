@@ -159,3 +159,42 @@ controller memory; recent events can be replayed from the existing NATS stream.
 
 Screenshots and detailed receipts remain under ignored `output/playwright/` and
 `.state/network-*`. This is a local lab release, not a production network audit.
+
+## Portfolio foundation — 2026-11-22
+
+Accepted roadmap: `roadmap.md`; first foundation image `04bb4e48318bbfdc`.
+The entire portfolio goal remains active; this is one verified increment.
+
+* Generator deadlines retain fractional Unix seconds, new runs emit their first
+  request immediately, and pacing uses elapsed time with bounded catch-up.
+  Configuration refresh is asynchronous/single-flight with retry backoff. The data
+  plane retains its cache and absolute deadline during control interruption.
+* Topology counts use independent one-second buckets (30 closed seconds), plus
+  current activity timestamps; span volume no longer truncates graph counts.
+  Resource plots use/deduplicate actual Metrics API timestamps per component/node.
+  HTTP history comes from independent five-second buckets, including intervals
+  without resource observations.
+* NATS/Jaeger pod templates carry hashes of their actual rendered configuration.
+  Both changed configurations caused real pod replacement; restoring canonical
+  configuration replaced them again. JetStream task history survived both changes.
+* Generator scale is restricted to one replica, preserving the advertised global
+  traffic cap. Failed queue attempts now perform real HTTP through all four hops
+  with a bounded per-request failure flag; the first attempt returns 503 and retry
+  returns 200. Result-store uses create-only event keys and age-filtered retrieval
+  so replay does not renew existing outcomes or display expired event data.
+* Unit/race checks passed: short/fractional deadlines, pacing/concurrency bounds,
+  nonblocking/single-flight configuration refresh, span-heavy topology counts,
+  measurement timestamps, independent traffic history and existing boundaries.
+* Seven live foundation checks passed, including three one-second/one-RPS runs
+  and HTTP throughout a real twelve-second control outage, recovered from the
+  retained stream without extending the deadline. Three config-rollout checks and
+  ten existing network checks passed. A focused trace assertion additionally
+  confirmed failed and successful queue attempts each traverse four HTTP hops.
+* Browser acceptance confirmed resource/traffic histories, generator-cap explanation
+  and preserved map keyboard focus. Expected API connection errors during the
+  controlled outage recovered; no JavaScript exception was observed.
+
+The public-repository CI workflow reuses native make/Python entrypoints and performs
+an isolated checkout bootstrap on an ephemeral hosted runner. Its actual run is
+recorded separately when available; adding YAML is not CI/CD acceptance. Workflow
+scope is this public lab, not private WatchMyApp/infrastructure repositories.

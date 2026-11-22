@@ -53,25 +53,27 @@ type perfBucket struct {
 	Functions map[string]*durations
 }
 type ResourceSample struct {
-	At         time.Time `json:"at"`
-	MetricAt   time.Time `json:"metric_at"`
-	CPU        *float64  `json:"cpu_cores"`
-	Memory     *float64  `json:"memory_mib"`
-	NodeCPU    *float64  `json:"node_cpu_cores"`
-	NodeMemory *float64  `json:"node_memory_mib"`
-	Pods       []Object  `json:"pods"`
-	Covered    int       `json:"covered_pods"`
-	Expected   int       `json:"expected_pods"`
+	At           time.Time `json:"at"`
+	MetricAt     time.Time `json:"metric_at"`
+	CPU          *float64  `json:"cpu_cores"`
+	Memory       *float64  `json:"memory_mib"`
+	NodeCPU      *float64  `json:"node_cpu_cores"`
+	NodeMetricAt time.Time `json:"node_metric_at"`
+	NodeMemory   *float64  `json:"node_memory_mib"`
+	Pods         []Object  `json:"pods"`
+	Covered      int       `json:"covered_pods"`
+	Expected     int       `json:"expected_pods"`
 }
 type Observatory struct {
-	started   time.Time
-	mu        sync.Mutex
-	buckets   map[int64]*perfBucket
-	resources []ResourceSample
+	started     time.Time
+	mu          sync.Mutex
+	buckets     map[int64]*perfBucket
+	edgeBuckets map[int64]map[string]*edgeCounter
+	resources   []ResourceSample
 }
 
 func NewObservatory() *Observatory {
-	return &Observatory{started: time.Now().UTC(), buckets: map[int64]*perfBucket{}, resources: []ResourceSample{}}
+	return &Observatory{started: time.Now().UTC(), edgeBuckets: map[int64]map[string]*edgeCounter{}, buckets: map[int64]*perfBucket{}, resources: []ResourceSample{}}
 }
 func (o *Observatory) record(e Event) {
 	if time.Since(e.Time) > 15*time.Minute || e.Time.After(time.Now().Add(time.Second)) {
@@ -79,12 +81,31 @@ func (o *Observatory) record(e Event) {
 	}
 	root := e.Kind == "http" && e.To == "gateway"
 	measured := e.TransferBytes != nil && *e.TransferBytes >= 0 && (e.TransferProtocol == "http-response" || e.TransferProtocol == "nats-message")
-	if !root && e.Kind != "span" && !measured {
-		return
-	}
+
 	key := e.Time.Unix() / 5 * 5
 	o.mu.Lock()
 	defer o.mu.Unlock()
+	if e.Kind != "span" && e.Time.Unix() >= time.Now().Unix()-30 {
+		second := e.Time.Unix()
+		rows := o.edgeBuckets[second]
+		if rows == nil {
+			rows = map[string]*edgeCounter{}
+			o.edgeBuckets[second] = rows
+		}
+		name := e.From + "→" + e.To
+		if rows[name] == nil {
+			rows[name] = &edgeCounter{}
+		}
+		rows[name].observe(e)
+		for k := range o.edgeBuckets {
+			if k < time.Now().Unix()-30 {
+				delete(o.edgeBuckets, k)
+			}
+		}
+	}
+	if !root && e.Kind != "span" && !measured {
+		return
+	}
 	b := o.buckets[key]
 	if b == nil {
 		b = &perfBucket{Functions: map[string]*durations{}, Network: map[string]*transferCounter{}}
@@ -217,6 +238,9 @@ func (o *Observatory) resource(snapshot Object) {
 			nc += c
 			nm += m / (1 << 20)
 			nn++
+			if sample.NodeMetricAt.IsZero() || ts.Before(sample.NodeMetricAt) {
+				sample.NodeMetricAt = ts
+			}
 		}
 	}
 	if nn > 0 {
@@ -270,7 +294,7 @@ func (o *Observatory) report(now time.Time, minutes int) Object {
 		if r.At.Before(cutoff) {
 			continue
 		}
-		point := Object{"at": r.At, "metric_at": r.MetricAt, "cpu_cores": r.CPU, "memory_mib": r.Memory, "node_cpu_cores": r.NodeCPU, "node_memory_mib": r.NodeMemory, "covered_pods": r.Covered, "expected_pods": r.Expected}
+		point := Object{"at": r.At, "metric_at": r.MetricAt, "cpu_cores": r.CPU, "memory_mib": r.Memory, "node_metric_at": r.NodeMetricAt, "node_cpu_cores": r.NodeCPU, "node_memory_mib": r.NodeMemory, "covered_pods": r.Covered, "expected_pods": r.Expected}
 		components := map[string]Object{}
 		for _, p := range r.Pods {
 			name, _ := p["component"].(string)
@@ -279,6 +303,14 @@ func (o *Observatory) report(now time.Time, minutes int) Object {
 			}
 			components[name]["cpu_cores"] = components[name]["cpu_cores"].(float64) + p["cpu_millicores"].(float64)/1000
 			components[name]["memory_mib"] = components[name]["memory_mib"].(float64) + p["memory_mib"].(float64)
+		}
+		for _, p := range r.Pods {
+			name, _ := p["component"].(string)
+			at, _ := p["timestamp"].(time.Time)
+			previous, _ := components[name]["metric_at"].(time.Time)
+			if previous.IsZero() || at.Before(previous) {
+				components[name]["metric_at"] = at
+			}
 		}
 		point["components"] = components
 		end := r.At.Unix() / 5 * 5
@@ -308,6 +340,19 @@ func (o *Observatory) report(now time.Time, minutes int) Object {
 			mergeDurations(functions[name], *d)
 		}
 	}
+	traffic := []Object{}
+	end := now.Unix() / 5 * 5
+	for second := cutoff.Unix() / 5 * 5; second < end; second += 5 {
+		b := o.buckets[second]
+		row := Object{"at": time.Unix(second+5, 0).UTC(), "rps": 0.0, "requests": 0, "errors": 0, "p95_ms": nil}
+		if b != nil {
+			row["rps"] = float64(b.Roots.Count) / 5
+			row["requests"] = b.Roots.Count
+			row["errors"] = b.Roots.Errors
+			row["p95_ms"] = percentile(b.Roots.Values, .95)
+		}
+		traffic = append(traffic, row)
+	}
 	rows := []Object{}
 	for name, d := range functions {
 		row := durationView(*d)
@@ -315,5 +360,5 @@ func (o *Observatory) report(now time.Time, minutes int) Object {
 		rows = append(rows, row)
 	}
 	sort.Slice(rows, func(i, j int) bool { return fmt.Sprint(rows[i]["name"]) < fmt.Sprint(rows[j]["name"]) })
-	return Object{"series": series, "functions": rows, "latest": latest, "minutes": minutes, "source": "Kubernetes Metrics API + application spans", "retention_minutes": 15, "attribution": "CPU/RAM to próbki poda/węzła, nie koszt pojedynczego żądania. Czasy spanów są zagnieżdżone — nie sumuj ich.", "trace_storage": "Jaeger: pamięć ograniczona do 5000 trace; restart czyści historię trace"}
+	return Object{"series": series, "traffic_series": traffic, "functions": rows, "latest": latest, "minutes": minutes, "source": "Kubernetes Metrics API + application spans", "retention_minutes": 15, "attribution": "CPU/RAM to próbki poda/węzła, nie koszt pojedynczego żądania. Czasy spanów są zagnieżdżone — nie sumuj ich.", "trace_storage": "Jaeger: pamięć ograniczona do 5000 trace; restart czyści historię trace"}
 }

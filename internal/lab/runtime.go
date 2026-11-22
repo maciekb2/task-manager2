@@ -229,19 +229,23 @@ func (a *App) echo(w http.ResponseWriter, r *http.Request) {
 	}
 	finishCPU(200)
 	status = 200
-	if rand.IntN(100) < c.ErrorPercent {
+	if r.URL.Query().Get("failure") == "true" || rand.IntN(100) < c.ErrorPercent {
 		status = 503
 	}
 	w.Header().Set("X-Lab-Pod", os.Getenv("HOSTNAME"))
 	w.Header().Set("X-Lab-Trace", trace)
 	writeJSON(w, status, Object{"trace": trace, "pod": os.Getenv("HOSTNAME"), "role": "echo", "class": r.Header.Get("X-Lab-Class"), "delay_ms": c.DelayMS, "cpu_ms": c.CPUMS, "http_status": status, "payload": strings.Repeat("x", c.PayloadBytes)})
 }
-func (a *App) callGateway(ctx context.Context, from, trace string) (int, error) {
+func (a *App) callGateway(ctx context.Context, from, trace string, controlledFailure bool) (int, error) {
 	ctx, finish := a.operation(traceContext(ctx, trace), from+".request")
 	status := 502
 	defer func() { finish(status) }()
 	trace = traceHex(ctx, trace)
-	req, err := http.NewRequestWithContext(ctx, "GET", "http://gateway:8080/work?units=1", nil)
+	targetURL := "http://gateway:8080/work?units=1"
+	if controlledFailure {
+		targetURL += "&failure=true"
+	}
+	req, err := http.NewRequestWithContext(ctx, "GET", targetURL, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -267,29 +271,21 @@ func (a *App) generate(ctx context.Context) {
 	slots := make(chan struct{}, 20)
 	var wg sync.WaitGroup
 	defer wg.Wait()
-	tokens := 0.0
+	pacer := trafficPacer{}
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-tick.C:
 			c := a.getConfig()
-			if c.RPS == 0 || time.Now().Unix() >= c.RunUntil {
-				tokens = 0
-				continue
-			}
-			tokens += float64(c.RPS) / 20
-			if tokens > float64(c.Concurrency) {
-				tokens = float64(c.Concurrency)
-			}
-			for tokens >= 1 && len(slots) < c.Concurrency {
-				tokens--
+			count := pacer.take(c, time.Now(), c.Concurrency-len(slots))
+			for i := 0; i < count; i++ {
 				slots <- struct{}{}
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
 					defer func() { <-slots }()
-					_, _ = a.callGateway(ctx, "generator", id()+id()[:8])
+					_, _ = a.callGateway(ctx, "generator", id()+id()[:8], false)
 				}()
 			}
 		}
@@ -300,7 +296,7 @@ func (a *App) runJob(ctx context.Context) error {
 	ctx, finish := a.operation(traceContext(ctx, trace), "job.execute")
 	outcome := 500
 	defer func() { finish(outcome) }()
-	status, err := a.callGateway(ctx, "job", trace)
+	status, err := a.callGateway(ctx, "job", trace, false)
 	if os.Getenv("JOB_FAIL") == "true" {
 		a.emit(Event{Trace: trace, From: "job", To: "job", Kind: "job", Status: 500, Message: "Kontrolowana awaria procesu Job"})
 		return fmt.Errorf("kontrolowana awaria zadania demonstracyjnego")

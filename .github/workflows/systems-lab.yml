@@ -1,0 +1,62 @@
+name: Systems Lab
+on:
+  pull_request:
+    paths-ignore: ['legacy/**', '**.md']
+  push:
+    branches: [main, feat/systems-lab]
+    paths-ignore: ['legacy/**', '**.md']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: systems-lab-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  local-lab:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+      - name: Unit and race checks
+        run: make test
+      - name: Syntax checks
+        run: |
+          for file in internal/lab/web/*.js; do node --check "$file"; done
+          python3 -m py_compile deploy/render.py scripts/*.py
+          bash -n scripts/lab.sh
+      - name: Bootstrap isolated Minikube from checkout
+        run: make up
+      - name: Real HTTP, queue, Kubernetes and Job acceptance
+        run: make smoke
+      - name: Native traces, resources and queue timings
+        run: python3 scripts/observability-smoke.py
+      - name: Actual payload transfer and retry accounting
+        run: python3 scripts/network-smoke.py
+      - name: Short deadlines and control outage
+        run: python3 scripts/foundation-smoke.py
+      - name: Config update and restoration
+        run: python3 scripts/config-rollout-smoke.py
+      - name: Report local development acceptance
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as out:
+              out.write('## Isolated local lab acceptance\n\n')
+              image = Path('.state/image')
+              if image.exists(): out.write('Image: `' + image.read_text().strip() + '`\n\n')
+              for path in sorted(Path('.state').glob('*smoke-results.json')):
+                  data = json.loads(path.read_text())
+                  out.write(f'- {path.name}: {len(data.get("checks", []))} accepted checks\n')
+              out.write('\nNo production or offsite recovery claim. Credentials and kubeconfigs are not uploaded.\n')
+          PY
+      - name: Stop the disposable profile
+        if: always()
+        run: |
+          if test -x .tools/minikube-linux-amd64; then make stop; fi
