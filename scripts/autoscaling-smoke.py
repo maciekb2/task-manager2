@@ -32,9 +32,9 @@ def measure(after,before):
 token=api('/api/session')['token']
 try:
  api('/api/action',{'action':'reset'})
- api('/api/action',{'action':'scale','target':'echo','replicas':1})
+ api('/api/action',{'action':'autoscale-baseline'})
  wait('single ready replica establishes a native scaling baseline',lambda s:echo(s)['replicas']==1 and echo(s)['ready']==1)
- api('/api/config',{'rps':50,'concurrency':20,'delay_ms':0,'cpu_ms':50,'error_percent':0,'payload_bytes':0,'duration_seconds':300})
+ config=api('/api/state')['config'];config['duration_seconds']=300;api('/api/config',config)
  baseline=time.time()+2
  time.sleep(24)
  measurements['one_replica']=measure(baseline,time.time())

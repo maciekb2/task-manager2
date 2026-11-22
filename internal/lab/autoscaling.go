@@ -94,3 +94,28 @@ func (a *App) recoverAutoscaling(ctx context.Context) {
 		}
 	}
 }
+
+// One actionMu-protected operation: a subsequent enable cannot interleave with
+// reset/scale/configuration halfway through baseline preparation.
+func (a *App) startCPUBaseline() error {
+	if err := a.resetLab(); err != nil {
+		return err
+	}
+	if err := a.kube.scale("echo", 1); err != nil {
+		return err
+	}
+	c := DefaultConfig()
+	c.RPS = 50
+	c.Concurrency = 20
+	c.DelayMS = 0
+	c.CPUMS = 50
+	c.DurationSeconds = 180
+	c.RunUntil = unixSeconds(time.Now().Add(180 * time.Second))
+	if err := a.kube.saveConfig(c); err != nil {
+		return err
+	}
+	a.mu.Lock()
+	a.config = c
+	a.mu.Unlock()
+	return nil
+}

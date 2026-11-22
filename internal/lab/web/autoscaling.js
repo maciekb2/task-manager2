@@ -1,8 +1,10 @@
 (() => {
  const samples=[];
- $('hpaBaseline').onclick=async()=>{try{if(state?.experiment?.active)throw Error('Najpierw zakończ eksperyment A/B.');await request('/api/action',{action:'reset'});await request('/api/action',{action:'scale',target:'echo',replicas:1});await request('/api/config',{rps:50,concurrency:20,delay_ms:0,cpu_ms:50,error_percent:0,payload_bytes:0,timeout_ms:0,max_in_flight:0,breaker:false,fan_out:false,duration_seconds:180});await refresh();notify('Jedna replika pod obciążeniem CPU. Zmierz punkt wyjścia przed włączeniem HPA.');}catch(e){notify(e.message,true);}};
- $('hpaEnable').onclick=()=>act({action:'autoscale-on'},'Włączono HPA echo. Czekaj na metryki i gotowe repliki');
- $('hpaDisable').onclick=()=>act({action:'autoscale-off'},'Usunięto HPA echo; przywracane są 2 repliki');
+ let pending=false;
+ async function perform(action){if(pending)return;pending=true;for(const id of ['hpaBaseline','hpaEnable','hpaDisable'])$(id).disabled=true;try{await action();}catch(e){notify(e.message,true);}finally{pending=false;for(const id of ['hpaBaseline','hpaEnable','hpaDisable'])$(id).disabled=false;}}
+ $('hpaBaseline').onclick=()=>perform(async()=>{if(state?.experiment?.active)throw Error('Najpierw zakończ eksperyment A/B.');await request('/api/action',{action:'autoscale-baseline'});await refresh();notify('Jedna replika pod obciążeniem CPU. Zmierz punkt wyjścia przed włączeniem HPA.');});
+ $('hpaEnable').onclick=()=>perform(()=>act({action:'autoscale-on'},'Włączono HPA echo. Czekaj na metryki i gotowe repliki'));
+ $('hpaDisable').onclick=()=>perform(()=>act({action:'autoscale-off'},'Usunięto HPA echo; przywracane są 2 repliki'));
  window.labAutoscalingState=s=>{
   const h=(s.cluster?.autoscalers||[]).find(h=>h.name==='echo'),d=(s.cluster?.deployments||[]).find(d=>d.name==='echo'),until=s.config.autoscale_until||0;
   const recommendation=h&&h.desired_replicas>=h.min_replicas?h.desired_replicas:null;

@@ -268,9 +268,11 @@ func (a *App) startControl(ctx context.Context, mux *http.ServeMux) error {
 			} else {
 				e = a.kube.scale(v.Target, v.Replicas)
 			}
-		case "autoscale-on", "autoscale-off":
+		case "autoscale-baseline", "autoscale-on", "autoscale-off":
 			if a.experiments != nil && a.experiments.status()["active"] != "" {
 				e = fmt.Errorf("najpierw zakończ eksperyment A/B")
+			} else if v.Action == "autoscale-baseline" {
+				e = a.startCPUBaseline()
 			} else {
 				e = a.changeAutoscaling(v.Action == "autoscale-on")
 			}

@@ -374,3 +374,12 @@ That final small display change awaits integration/deployment acceptance.
 Secret scan: Gitleaks 8.30.1 over the ten new commits (about 144 KiB) reported no
 leaks. This is scoped source evidence, not a claim about arbitrary historical
 repositories or production secret hygiene.
+
+The browser HPA flow exposed a genuine rapid-click race: separate reset/scale/config
+requests could interleave with enable, rejecting scale and leaving CPU stopped.
+Baseline preparation is now a single actionMu-protected server action, and the
+three HPA buttons stay disabled until their operation completes. The earlier
+API-driven HPA result remains valid; this UI flow correction requires fresh focused
+acceptance. Browser predicates that perform async fetch are replaced by explicit
+bounded polling of awaited evaluations in this acceptance, avoiding a premature
+wait result in the CLI bridge.

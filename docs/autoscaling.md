@@ -1,7 +1,8 @@
 # Native CPU autoscaling
 
 In **Odporność systemu**, use **Jedna replika + CPU** to reset to a known state and
-start 180 s of synthetic compute traffic on one echo replica. Observe actual
+start 180 s of synthetic compute traffic on one echo replica. This preparation
+is one serialized server action; HPA controls stay disabled while it runs. Observe actual
 throughput/latency and the worker's CPU; then enable HPA. The lab creates only the
 namespace-local `echo` HPA, targeting Deployment echo, with 1–5 replicas and an
 absolute average CPU target of **200m per pod**. This is not 200% of its request.
