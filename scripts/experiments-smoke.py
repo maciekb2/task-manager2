@@ -33,6 +33,12 @@ try:
  else:raise AssertionError('experiment mutation accepted without session')
  checks.append('new experiment mutations require session token')
  id=command('create',name='HTTP baseline vs delay')['active']
+ for action in ['autoscale-baseline','autoscale-on','autoscale-off']:
+  try:api('/api/action',{'action':action})
+  except urllib.error.HTTPError as e:assert e.code==400
+  else:raise AssertionError('global HPA action admitted during scoped experiment')
+ assert api('/api/experiments')['active']==id and not record(id)['phases'] and api('/api/state')['config']['rps']==0
+ checks.append('all HPA controls preserve a newly created active experiment')
  baseline=phase(id,'baseline',0)
  variant=phase(id,'variant',400)
  assert baseline['id']!=variant['id']
