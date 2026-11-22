@@ -269,7 +269,11 @@ func (a *App) startControl(ctx context.Context, mux *http.ServeMux) error {
 				e = a.kube.scale(v.Target, v.Replicas)
 			}
 		case "autoscale-on", "autoscale-off":
-			e = a.changeAutoscaling(v.Action == "autoscale-on")
+			if a.getConfig().RunID != "" {
+				e = fmt.Errorf("najpierw zakończ eksperyment A/B")
+			} else {
+				e = a.changeAutoscaling(v.Action == "autoscale-on")
+			}
 		case "restart":
 			e = a.kube.restartPod(v.Target)
 		case "enqueue":

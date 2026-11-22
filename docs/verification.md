@@ -336,3 +336,10 @@ fan-out edges. The first edge assertion incorrectly required a vertical SVG path
 with zero-width bounds to be Playwright-visible; DOM attachment is the correct
 check, with visual screenshot inspection. Mobile inspection found a real table
 overflow; horizontal table containment is fixed in the next presentation deploy.
+Experiment CI `45070416641` passed unit/race and syntax, but bootstrap failed before
+creating the profile: Minikube's lookup of the pinned Kubernetes patch hit the
+shared runner IP's anonymous GitHub API rate limit (403). The bootstrap step now
+uses the job's existing read-only ephemeral GITHUB_TOKEN, supported by the pinned
+Minikube source (`pkg/minikube/download/gh/gh.go`). It is step-scoped, not written
+to manifests or runtime, and no external account secret is introduced. Cleanup
+skips a profile that never produced a kubeconfig. Original failure retained.

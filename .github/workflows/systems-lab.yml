@@ -30,6 +30,8 @@ jobs:
           python3 -m py_compile deploy/render.py scripts/*.py
           bash -n scripts/lab.sh
       - name: Bootstrap isolated Minikube from checkout
+        env:
+          GITHUB_TOKEN: ${{ github.token }} # Minikube release lookup; read-only, step-scoped
         run: make up
       - name: Real HTTP, queue, Kubernetes and Job acceptance
         run: make smoke
@@ -73,4 +75,4 @@ jobs:
       - name: Stop the disposable profile
         if: always()
         run: |
-          if test -x .tools/minikube-linux-amd64; then make stop; fi
+          if test -x .tools/minikube-linux-amd64 && test -s .state/kubeconfig; then make stop; fi
