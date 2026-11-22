@@ -62,6 +62,9 @@ PY
   if ! k -n "$NS" get configmap lab-config >/dev/null 2>&1; then
     k -n "$NS" create configmap lab-config --from-literal='lab.json={"rps":0,"concurrency":4,"delay_ms":40,"error_percent":0,"cpu_ms":0,"run_until":0}' >/dev/null
   fi
+  # A stable opaque digest rolls every broker credential consumer after recreation.
+  export LAB_NATS_SECRET_HASH
+  LAB_NATS_SECRET_HASH="$(k -n "$NS" get secret lab-nats -o jsonpath='{.data.token}' | sha256sum | cut -d' ' -f1)"
   python3 "$ROOT/deploy/render.py" > "$ROOT/.state/manifests.json"
   k apply -f "$ROOT/.state/manifests.json"
   k -n "$NS" rollout status deployment/nats --timeout=180s

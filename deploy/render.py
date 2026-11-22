@@ -8,6 +8,7 @@ from pathlib import Path
 NS = "systems-lab"
 IMAGE = os.environ.get("LAB_IMAGE", "systems-lab:dev")
 VERSION = os.environ.get("LAB_VERSION", "dev")
+NATS_SECRET_HASH = os.environ.get("LAB_NATS_SECRET_HASH", "not-rendered-by-bootstrap")
 LABELS = {"app.kubernetes.io/part-of": "systems-lab"}
 items = []
 
@@ -78,6 +79,7 @@ broker = add("Deployment", "nats", {
             "volumeMounts": [{"name": "config", "mountPath": "/etc/nats", "readOnly": True}, {"name": "data", "mountPath": "/data"}]}],
         "volumes": [{"name": "config", "configMap": {"name": "nats-config"}}, {"name": "data", "persistentVolumeClaim": {"claimName": "nats-data"}}]}}}, api="apps/v1")
 broker["spec"]["template"]["metadata"]["annotations"] = {"lab.systems/config-sha256": hashlib.sha256(nats_config["data"]["nats.conf"].encode()).hexdigest()}
+broker["spec"]["template"]["metadata"]["annotations"]["lab.systems/nats-secret-sha256"] = NATS_SECRET_HASH
 broker["metadata"]["labels"].update(labels)
 broker["metadata"]["annotations"] = {"lab.systems/description": "JetStream: trwałe kolejki, zdarzenia, wyniki i DLQ"}
 add("Service", "nats", {"selector": labels, "ports": [{"name": "client", "port": 4222, "targetPort": 4222}]})
@@ -138,7 +140,7 @@ def pod_spec(role):
 for role, (deps, description) in roles.items():
     labels = dict(LABELS, **{"app.kubernetes.io/component": role})
     obj = add("Deployment", role, {"replicas": 2 if role == "echo" else 1,
-        "selector": {"matchLabels": labels}, "template": {"metadata": {"labels": labels}, "spec": pod_spec(role)}}, api="apps/v1")
+        "selector": {"matchLabels": labels}, "template": {"metadata": {"labels": labels, "annotations": {"lab.systems/nats-secret-sha256": NATS_SECRET_HASH} if role != "web" else {}}, "spec": pod_spec(role)}}, api="apps/v1")
     obj["metadata"]["labels"].update(labels)
     obj["metadata"]["annotations"] = {"lab.systems/dependencies": deps, "lab.systems/description": description}
     obj = add("Service", role, {"selector": labels, "ports": [{"name": "http", "port": 8080, "targetPort": 8080}]})

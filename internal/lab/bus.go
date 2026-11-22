@@ -40,9 +40,21 @@ func (b *Bus) initialize() error {
 		{Name: "DLQ", Subjects: []string{"tasks.dlq"}, Storage: nats.FileStorage, MaxAge: 24 * time.Hour, MaxMsgs: 1000, MaxBytes: 4 << 20},
 	}
 	for _, c := range configs {
-		if _, err := b.js.StreamInfo(c.Name); err != nil {
+		info, err := b.js.StreamInfo(c.Name)
+		if err != nil {
 			if _, err = b.js.AddStream(c); err != nil {
 				return fmt.Errorf("stream %s: %w", c.Name, err)
+			}
+			continue
+		}
+		next := info.Config
+		if next.MaxAge != c.MaxAge || next.MaxMsgs != c.MaxMsgs || next.MaxBytes != c.MaxBytes || next.Discard != c.Discard {
+			next.MaxAge = c.MaxAge
+			next.MaxMsgs = c.MaxMsgs
+			next.MaxBytes = c.MaxBytes
+			next.Discard = c.Discard
+			if _, err = b.js.UpdateStream(&next); err != nil {
+				return fmt.Errorf("reconcile stream %s: %w", c.Name, err)
 			}
 		}
 	}
@@ -54,8 +66,24 @@ func (b *Bus) initialize() error {
 	if err != nil {
 		kv, err = b.js.CreateKeyValue(&nats.KeyValueConfig{Bucket: "lab-results", Storage: nats.FileStorage, TTL: 24 * time.Hour, MaxBytes: 8 << 20, History: 1})
 	}
+	if err != nil {
+		return err
+	}
+	info, err := b.js.StreamInfo("KV_lab-results")
+	if err != nil {
+		return err
+	}
+	next := info.Config
+	if next.MaxAge != 24*time.Hour || next.MaxBytes != 8<<20 || next.MaxMsgsPerSubject != 1 {
+		next.MaxAge = 24 * time.Hour
+		next.MaxBytes = 8 << 20
+		next.MaxMsgsPerSubject = 1
+		if _, err = b.js.UpdateStream(&next); err != nil {
+			return fmt.Errorf("reconcile task KV: %w", err)
+		}
+	}
 	b.tasks = kv
-	return err
+	return nil
 }
 func (b *Bus) readyTasks() error {
 	var err error
