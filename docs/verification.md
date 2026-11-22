@@ -275,3 +275,10 @@ image, manual rollback and timed rollback after controller restart, at `fe96a4c`
 https://github.com/maciekb2/task-manager2/actions/runs/45066294325 . This result does
 not certify later source. HTTP outcome replay capacity remains explicitly bounded
 as documented in decisions/004; a dedicated retention path is deferred to stage 4.
+
+CI `45068716761` exposed a fixture discovery race: after a completed rollout the
+observer could still report the previous pod names and their pre-scenario 200.
+The startup check now obtains post-rollout pod identities from Kubernetes and
+waits for discovery to report those identities before examining responses. The
+original failed run remains retained; no application default escaped a new pod
+in that evidence. Other steps through durable replay passed in that run.
