@@ -343,3 +343,18 @@ uses the job's existing read-only ephemeral GITHUB_TOKEN, supported by the pinne
 Minikube source (`pkg/minikube/download/gh/gh.go`). It is step-scoped, not written
 to manifests or runtime, and no external account secret is introduced. Cleanup
 skips a profile that never produced a kubeconfig. Original failure retained.
+
+### Existing-state and credential acceptance
+
+Source `192e934551a2c720`: task-KV TTL/history/byte limits were deliberately changed
+by an operator fixture and correctly reconciled after a real control restart,
+with a terminal task retained. The actual NATS Secret was deleted and recreated
+through make deploy. Images stayed identical, every broker/client pod identity
+changed through the credential digest, and old/new tasks completed. Both checks
+passed. No credential value was logged or exported.
+
+CI `45070783076` confirmed the authenticated Minikube lookup/bootstrap works. It
+then exposed an existing probe race: `/api/state` legitimately reports cluster=null
+until observer discovery arrives; smoke's predicate dereferenced that null. The
+waiters now wait explicitly for discovery, preserving their time bounds and real
+assertions. This is an initialization state, not evidence of a failed discovery.

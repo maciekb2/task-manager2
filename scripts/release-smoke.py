@@ -25,6 +25,8 @@ def wait(name,predicate,seconds=90):
  while time.monotonic()<end:
   try:
    s=api('/api/state')
+   if not s.get('cluster'):
+    time.sleep(.5);continue
    if predicate(s):checks.append(name);print('PASS',name,flush=True);return s
   except (OSError,ValueError,KeyError):pass
   time.sleep(1)

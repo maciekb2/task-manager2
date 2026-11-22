@@ -19,7 +19,9 @@ half-open probe; completions admitted before a trip cannot close the newer circu
 
 ## Independent bounded HTTP outcomes
 
-Gateway outcomes are published to `OUTCOMES` (`lab.outcomes`), separate from spans.
+Completed outbound gateway→validator attempts are published to `OUTCOMES` (`lab.outcomes`), separate from spans.
+Early backpressure/breaker rejections create no downstream attempt: inspect their
+root/protection events and metrics, rather than expecting an outbound result.
 Its retention is **at most** 1 h, 10,000 messages or 16 MiB, whichever comes first.
 The result-store is a read facade for the last 50 retained outcomes. It does not
 maintain another unique-key KV projection, so it cannot fill a redundant cache or

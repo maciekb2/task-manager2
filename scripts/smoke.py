@@ -37,6 +37,9 @@ def wait(label, predicate, seconds=90):
     while time.monotonic() < deadline:
         try:
             last = api('/api/state')
+            if not last.get('cluster'):
+                time.sleep(.5)
+                continue
             if predicate(last):
                 checks.append(label)
                 print('PASS', label, flush=True)
@@ -54,7 +57,7 @@ def config(rps=0, errors=0, duration=15):
         'error_percent': errors, 'cpu_ms': 0, 'duration_seconds': duration})
 
 def replicas(state, name, count):
-    deployments = state.get('cluster', {}).get('deployments', [])
+    deployments = (state.get('cluster') or {}).get('deployments', [])
     pods = state.get('cluster', {}).get('pods', [])
     found = any(d['name'] == name and d['replicas'] == count and d['ready'] == count for d in deployments)
     return found and len([p for p in pods if p['component'] == name and p['phase'] == 'Running']) == count
