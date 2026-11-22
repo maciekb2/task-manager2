@@ -2,6 +2,7 @@
 """Per-run isolation, actual A/B results, queue/job carriers and restart semantics."""
 import json,os,subprocess,time
 from pathlib import Path
+from datetime import datetime
 import urllib.request,urllib.error
 ROOT=Path(__file__).resolve().parent.parent
 BASE=os.environ.get('LAB_URL','http://127.0.0.1:18085').rstrip('/')
@@ -39,7 +40,15 @@ try:
   else:raise AssertionError('global HPA action admitted during scoped experiment')
  assert api('/api/experiments')['active']==id and not record(id)['phases'] and api('/api/state')['config']['rps']==0
  checks.append('all HPA controls preserve a newly created active experiment')
+ api('/api/action',{'action':'scale','target':'gateway','replicas':0})
+ wait('gateway really stopped before phase preparation',lambda:api('/api/state'),lambda s:bool(s.get('cluster')) and any(d['name']=='gateway' and d['replicas']==0 and d['ready']==0 for d in s['cluster']['deployments']) and not any(p['component']=='gateway' and p['phase']=='Running' for p in s['cluster']['pods']))
  baseline=phase(id,'baseline',0)
+ pods=json.loads(subprocess.check_output(K+['get','pods','-l','app.kubernetes.io/component=gateway','-o','json'],text=True,timeout=30))['items']
+ started=datetime.fromisoformat(baseline['started'].replace('Z','+00:00'))
+ ready=[c for p in pods if p['status']['phase']=='Running' and not p['metadata'].get('deletionTimestamp') for c in p['status']['conditions'] if c['type']=='Ready' and c['status']=='True']
+ assert ready and all(datetime.fromisoformat(c['lastTransitionTime'].replace('Z','+00:00'))<=started for c in ready),'measurement started before the restored gateway was ready'
+ assert baseline['summary']['count']>0,'zero-traffic baseline falsely accepted'
+ checks.append('clock starts after restored gateway readiness, with actual successful work')
  variant=phase(id,'variant',400)
  assert baseline['id']!=variant['id']
  assert variant['summary']['mean_ms']>baseline['summary']['mean_ms']+200

@@ -390,3 +390,10 @@ ready pods with a native 497m → 200m/pod scaling decision. The browser verifie
 state through explicitly awaited bounded polling, stopped HPA, restored the base,
 and checked the 390 px layout without overflow. `docs/assets/autoscaling.png` is
 that actual UI capture; a later small change formats CPU as readable quantities.
+
+Review found that phase readiness waited only for echo/consumer after reset. It
+now waits for generator, every HTTP hop, consumer and result-store, plus optional
+fan-out services. A regression stops the gateway, restores it through normal
+phase preparation and compares the phase start with the actual Pod Ready
+transition; a zero-traffic baseline is rejected. This fixes a reachable cause of
+short-run measurement skew, rather than redefining that skew as a complete result.

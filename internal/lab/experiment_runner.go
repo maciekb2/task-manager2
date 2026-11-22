@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func (a *App) experimentReady(replicas int, prepared time.Time) bool {
+func (a *App) experimentReady(replicas int, prepared time.Time, fanout bool) bool {
 	info, err := a.bus.js.ConsumerInfo("TASKS", "workers")
 	if err != nil || info.NumPending > 0 || info.NumAckPending > 0 {
 		return false
@@ -31,7 +31,12 @@ func (a *App) experimentReady(replicas int, prepared time.Time) bool {
 		}
 	}
 
-	for name, count := range map[string]int{"echo": replicas, "consumer": 1} {
+	required := map[string]int{"generator": 1, "gateway": 1, "validator": 1, "enricher": 1, "echo": replicas, "consumer": 1, "result-store": 1}
+	if fanout {
+		required["inventory"] = 1
+		required["pricing"] = 1
+	}
+	for name, count := range required {
 		d, err := a.kube.object(apps("deployments/" + name))
 		if err != nil {
 			return false
@@ -125,6 +130,7 @@ func (a *App) experimentTick() {
 	id := r.ID
 	replicas := p.Replicas
 	prepared := p.Prepared
+	fanout := p.Config.FanOut
 	deadline := p.Deadline
 	m.mu.Unlock()
 	now := time.Now().UTC()
@@ -141,7 +147,7 @@ func (a *App) experimentTick() {
 			_ = a.resetLab()
 			return
 		}
-		if !a.experimentReady(replicas, prepared) {
+		if !a.experimentReady(replicas, prepared, fanout) {
 			return
 		}
 		c := p.Config
