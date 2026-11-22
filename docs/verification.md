@@ -431,3 +431,21 @@ complete beta's merge/tag and publication are recorded in GitHub Releases.
 Required implementation stages 1–5 are accepted. Queue-driven consumer scaling
 remains explicitly optional. Predecessor archival is a separate owner-review
 migration follow-up; no predecessor history was deleted.
+
+### Main integration fixture correction
+
+Main run [45074877778](https://github.com/maciekb2/task-manager2/actions/runs/45074877778)
+passed through startup/subscription recovery but failed its release identity
+assertion after a real ready/HTTP-503 candidate. The digest collector included
+all echo pods, including completed/terminating observations from the previous
+image, while the readiness predicate selected Running pods. The proof now uses
+only ready Running pods of the requested image and requires non-empty image IDs;
+a future assertion also prints its safe image-identity evidence. This changes the
+probe, not the runtime/source image. The failed main run is retained, not counted
+as acceptance. A focused actual release/rollback run verifies the correction.
+
+The corrected focused release proof passed all six actual checks locally, including
+different ready-pod image identities, real HTTP 503, manual rollback, recovery
+intent across a real control restart, and the timed HTTP-200 restoration. This
+small probe/documentation follow-up changes no runtime input: the source image
+remains `fdd1599d48fca1f4` with the complete accepted runtime CI above.

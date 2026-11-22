@@ -35,11 +35,11 @@ def stamp(raw):return datetime.fromisoformat(raw.replace('Z','+00:00')).timestam
 def ready(s,image):
  d=next((d for d in s['cluster']['deployments'] if d['name']=='echo'),{})
  pods=[p for p in s['cluster']['pods'] if p['component']=='echo' and p['phase']=='Running']
- return d.get('images')==[image] and d.get('ready',0)==d.get('replicas',-1) and bool(pods) and all(p['images']==[image] and p['ready']==p['containers'] for p in pods)
+ return d.get('images')==[image] and d.get('ready',0)==d.get('replicas',-1) and bool(pods) and all(p['images']==[image] and p['ready']==p['containers'] and bool(p.get('image_ids')) and all(p['image_ids']) for p in pods)
 def response(s,status,after,image):
  names={p['name'] for p in s['cluster']['pods'] if p['component']=='echo' and p['images']==[image]}
  return any(e['kind']=='http' and e['to']=='echo' and e['status']==status and stamp(e['time'])>after and e.get('target_pod') in names for e in s['events'])
-def digests(s):return sorted({v for p in s['cluster']['pods'] if p['component']=='echo' for v in p.get('image_ids',[])})
+def digests(s,image):return sorted({v for p in s['cluster']['pods'] if p['component']=='echo' and p['phase']=='Running' and p['ready']==p['containers'] and p['images']==[image] for v in p.get('image_ids',[]) if v})
 token=session()
 try:
  initial=api('/api/state');images=initial['self']['release_images'];base,candidate=images['current'],images['candidate']
@@ -47,11 +47,11 @@ try:
  action('rollback-demo')
  api('/api/config',{'rps':5,'concurrency':4,'delay_ms':10,'error_percent':0,'cpu_ms':0,'duration_seconds':180})
  start=time.time();s=wait('baseline image serves actual HTTP 200',lambda s:ready(s,base) and response(s,200,start,base))
- evidence['base']=digests(s)
+ evidence['base']=digests(s,base)
  start=time.time();action('release-demo')
  s=wait('new immutable image: ready pods serve real HTTP 503',lambda s:ready(s,candidate) and response(s,503,start,candidate))
- evidence['candidate']=digests(s)
- assert evidence['base'] and evidence['candidate'] and not(set(evidence['base'])&set(evidence['candidate'])),'image identity did not change'
+ evidence['candidate']=digests(s,candidate)
+ assert evidence['base'] and evidence['candidate'] and not(set(evidence['base'])&set(evidence['candidate'])),{'error':'current ready image identity did not change','evidence':evidence}
  start=time.time();action('rollback-demo')
  wait('manual rollback restores original image and fresh HTTP 200',lambda s:ready(s,base) and response(s,200,start,base))
  action('release-demo')
