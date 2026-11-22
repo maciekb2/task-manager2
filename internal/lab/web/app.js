@@ -3,8 +3,8 @@ const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let state = null, token = '', selected = '', trace = '', busy = false, toastTimer;
 const editable = new Set(['generator','gateway','validator','enricher','echo','consumer','result-store']);
-const positions = {web:[105,65],control:[325,65],observer:[545,65],'result-store':[875,65],generator:[105,265],gateway:[300,265],validator:[495,265],enricher:[690,265],echo:[885,265],job:[105,465],nats:[495,465],consumer:[885,465]};
-const titles = {web:'Web UI',control:'Control API',observer:'Observer',generator:'Traffic generator',gateway:'Gateway',validator:'Validator',enricher:'Enricher',echo:'HTTP worker',nats:'NATS JetStream',consumer:'Queue consumer','result-store':'Result store',job:'Jobs / CronJobs','dead-letter':'Dead-letter'};
+const positions = {web:[105,65],control:[325,65],observer:[545,65],jaeger:[705,65],'result-store':[875,65],generator:[105,265],gateway:[300,265],validator:[495,265],enricher:[690,265],echo:[885,265],job:[105,465],nats:[495,465],consumer:[885,465]};
+const titles = {jaeger:'Jaeger',web:'Web UI',control:'Control API',observer:'Observer',generator:'Traffic generator',gateway:'Gateway',validator:'Validator',enricher:'Enricher',echo:'HTTP worker',nats:'NATS JetStream',consumer:'Queue consumer','result-store':'Result store',job:'Jobs / CronJobs','dead-letter':'Dead-letter'};
 const colors = {web:'#88a5f2',control:'#88a5f2',observer:'#88a5f2',generator:'#6fe5bd',gateway:'#6fe5bd',validator:'#6fe5bd',enricher:'#6fe5bd',echo:'#6fe5bd',nats:'#f0bc6a',consumer:'#f0bc6a','result-store':'#b99df6',job:'#f0bc6a'};
 function notify(message, error=false) { $('toast').textContent=message; $('toast').className='show'+(error?' error':''); clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').className='',6000); }
 async function request(path, body, retry=true) {
@@ -14,7 +14,7 @@ async function request(path, body, retry=true) {
   if(!response.ok) throw new Error(data.error||`HTTP ${response.status}`);return data;
 }
 async function act(body, message='Wykonano akcję') {try{const result=await request('/api/action',body);notify(result.name?`${message}: ${result.name}`:message);await refresh();return result;}catch(e){notify(e.message,true);}}
-function switchTab(tab) {document.querySelectorAll('[data-tab]').forEach(e=>e.classList.toggle('active',e.dataset.tab===tab));document.querySelectorAll('.view').forEach(e=>e.classList.toggle('active',e.id===`view-${tab}`));}
+function switchTab(tab) {document.body.classList.toggle('learning-mode',tab==='learn');document.querySelectorAll('[data-tab]').forEach(e=>e.classList.toggle('active',e.dataset.tab===tab));document.querySelectorAll('.view').forEach(e=>e.classList.toggle('active',e.id===`view-${tab}`));window.dispatchEvent(new CustomEvent('lab-tab',{detail:tab}));}
 document.querySelectorAll('[data-tab]').forEach(e=>e.addEventListener('click',()=>switchTab(e.dataset.tab)));
 for(const name of ['rps','concurrency']) $(name).addEventListener('input',()=>$(name+'Value').value=$(name).value);
 function values() {return {rps:+$('rps').value,concurrency:+$('concurrency').value,delay_ms:+$('delay').value,error_percent:+$('errors').value,cpu_ms:+$('cpu').value,duration_seconds:+$('duration').value};}
@@ -31,7 +31,7 @@ $('successJob').addEventListener('click',()=>act({action:'job',failures:0},'Utwo
 $('failedJob').addEventListener('click',()=>act({action:'job',failures:1},'Utworzono Job z kontrolowanym błędem'));
 $('startCron').addEventListener('click',()=>act({action:'cron',suspended:false,schedule:$('schedule').value},'Harmonogram włączony'));
 $('stopCron').addEventListener('click',()=>act({action:'cron',suspended:true,schedule:$('schedule').value},'Harmonogram wstrzymany'));
-$('declared').addEventListener('change',()=>state&&renderGraph());
+$('declared').addEventListener('change',()=>state&&renderGraph());$('graphScope').addEventListener('change',()=>state&&renderGraph());
 $('loadResults').addEventListener('click',async()=>{try{const rows=await request('/api/results');$('resultTable').innerHTML=table(['Czas','Ślad','HTTP','Czas całego łańcucha'],rows.map(e=>[time(e.time),`<button class="text-button" data-result-trace="${esc(e.trace)}">${esc(e.trace)}</button>`,`<span class="code ${e.status>=400?'bad':''}">${e.status}</span>`,`${e.duration_ms.toFixed(1)} ms`]));$('resultTable').querySelectorAll('[data-result-trace]').forEach(b=>b.addEventListener('click',()=>renderTrace(b.dataset.resultTrace)));}catch(e){notify(e.message,true);}});
 function table(headers, rows) {return rows.length?`<table><thead><tr>${headers.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${row.map(cell=>`<td>${cell}</td>`).join('')}</tr>`).join('')}</tbody></table>`:'<div class="empty">Brak danych. Uruchom scenariusz.</div>';}
 function badge(value) {return `<span class="badge ${esc(value)}">${esc(value)}</span>`;}
@@ -42,12 +42,12 @@ function usageFor(pod) {const usage=(state?.cluster?.usage||[]).find(p=>p.metada
 function renderGraph() {
   const nodes=deployments().map(d=>({...d,id:d.component||d.name}));
   if((state.cluster?.cronjobs||[]).length) nodes.push({id:'job',name:'job',ready:(state.cluster?.jobs||[]).filter(j=>j.succeeded>0).length,replicas:(state.cluster?.jobs||[]).length});
-  const present=new Set(nodes.map(n=>n.id));
+  const simple=$('graphScope').value==='flow';if(simple){for(let i=nodes.length-1;i>=0;i--)if(!['generator','gateway','validator','enricher','echo'].includes(nodes[i].id))nodes.splice(i,1);}const present=new Set(nodes.map(n=>n.id));
   nodes.forEach((n,i)=>{if(!positions[n.id])positions[n.id]=[105+(i%5)*195,565+Math.floor(i/5)*100];});
   const edgeMap=new Map();
   if($('declared').checked) for(const node of nodes) for(const to of node.dependencies||[]) if(to&&present.has(to))edgeMap.set(`${node.id}→${to}`,{from:node.id,to,count:0});
   for(const e of Object.values(state.edges||{})) {const to=e.to==='dead-letter'?'nats':e.to;if(present.has(e.from)&&present.has(to)&&e.from!==to)edgeMap.set(`${e.from}→${to}`,{...e,to});}
-  let svg='<svg viewBox="0 0 1000 535" role="img" aria-label="Wykryte mikroserwisy i ich połączenia"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#657b8d"/></marker></defs>';
+  let svg='<svg viewBox="'+(simple?'0 175 1000 180':'0 0 1000 535')+'" role="img" aria-label="Wykryte mikroserwisy i ich połączenia"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#657b8d"/></marker></defs>';
   for(const edge of edgeMap.values()) {
     const p=positions[edge.from],q=positions[edge.to];if(!p||!q)continue;
     const dx=q[0]-p[0],dy=q[1]-p[1],horizontal=Math.abs(dx)>Math.abs(dy);const start=[p[0]+(horizontal?Math.sign(dx)*77:0),p[1]+(horizontal?0:Math.sign(dy)*31)];const end=[q[0]-(horizontal?Math.sign(dx)*77:0),q[1]-(horizontal?0:Math.sign(dy)*31)];
@@ -71,7 +71,7 @@ function renderInspector() {
   panel.querySelectorAll('[data-log]').forEach(b=>b.addEventListener('click',async()=>{try{const v=await request('/api/logs?pod='+encodeURIComponent(b.dataset.log));$('logTitle').textContent=b.dataset.log;$('logText').textContent=v.logs;$('logDialog').showModal();}catch(e){notify(e.message,true);}}));
 }
 $('closeLogs').addEventListener('click',()=>$('logDialog').close());
-async function renderTrace(id) {trace=id;try{const events=await request('/api/trace?id='+encodeURIComponent(id));$('traceView').innerHTML=`<div class="trace-id">${esc(id)}</div>`+events.map(e=>`<div class="trace-row"><span>${esc(e.from)} → ${esc(e.to)}</span><span class="code ${e.status>=400?'bad':''}">${e.status||e.kind} · ${e.duration_ms.toFixed(1)} ms</span><small>${esc(e.message||e.target_pod||e.pod)}${e.attempt?' · próba '+e.attempt:''}</small></div>`).join('');}catch(e){notify(e.message,true);}}
+async function renderTrace(id) {trace=id;try{const events=await request('/api/trace?id='+encodeURIComponent(id));$('traceView').innerHTML=`<button class="secondary" id="fullTrace">Otwórz pełny trace OpenTelemetry →</button>`+`<div class="trace-id">${esc(id)}</div>`+events.map(e=>`<div class="trace-row"><span>${esc(e.from)} → ${esc(e.to)}</span><span class="code ${e.status>=400?'bad':''}">${e.status||e.kind} · ${e.duration_ms.toFixed(1)} ms</span><small>${esc(e.message||e.operation||e.target_pod||e.pod)}${e.attempt?' · próba '+e.attempt:''}</small></div>`).join('');$('fullTrace').onclick=()=>window.showPerformanceTrace?.(id);}catch(e){notify(e.message,true);}}
 function render() {
   const c=state.cluster,config=state.config,m=state.metrics,queue=state.queue,pods=c?.pods||[];
   const stale=!c||Date.now()-Date.parse(c.at)>20000;
@@ -79,7 +79,7 @@ function render() {
   $('metricRPS').innerHTML=`${m.rps.toFixed(1)}<small>req/s</small>`;$('metricRequests').textContent=`${m.requests} żądań w ostatnich 30 s`;$('metricLatency').innerHTML=`${m.p95_ms.toFixed(0)}<small>ms</small>`;$('metricErrors').innerHTML=`${m.requests?(100*m.errors/m.requests).toFixed(0):0}<small>%</small>`;$('metricPods').textContent=`${pods.filter(p=>p.phase==='Running'&&p.ready===p.containers).length} / ${pods.filter(p=>p.phase!=='Succeeded'&&p.phase!=='Failed').length}`;$('metricNode').textContent=`${c?.nodes?.length||0} węzeł · ${(c?.deployments||[]).length} deploymentów`;
   const running=config.rps>0&&config.run_until*1000>Date.now();$('running').className='pill'+(running?' running':'');$('running').textContent=running?`${config.rps} req/s · ${Math.max(0,Math.ceil(config.run_until-Date.now()/1000))} s`:'Zatrzymany';
   renderGraph();if(!$('inspector').contains(document.activeElement))renderInspector();
-  const events=state.events.filter(e=>e.trace&&e.kind!=='action').slice(0,30);$('eventList').innerHTML=events.length?events.map(e=>`<button class="event" data-trace="${esc(e.trace)}"><time>${time(e.time)}</time><span>${esc(e.from)} → ${esc(e.to)}</span><span class="code ${e.status>=400?'bad':''}">${e.status||'evt'}</span><span class="duration">${e.duration_ms.toFixed(0)} ms</span></button>`).join(''):'<div class="empty">Uruchom generator lub dodaj zadanie do kolejki.</div>';
+  const events=state.events.filter(e=>e.trace&&e.kind!=='action'&&e.kind!=='span').slice(0,30);$('eventList').innerHTML=events.length?events.map(e=>`<button class="event" data-trace="${esc(e.trace)}"><time>${time(e.time)}</time><span>${esc(e.from)} → ${esc(e.to)}</span><span class="code ${e.status>=400?'bad':''}">${e.status||'evt'}</span><span class="duration">${e.duration_ms.toFixed(0)} ms</span></button>`).join(''):'<div class="empty">Uruchom generator lub dodaj zadanie do kolejki.</div>';
   $('eventList').querySelectorAll('[data-trace]').forEach(b=>b.addEventListener('click',()=>renderTrace(b.dataset.trace)));
   $('queueCounters').innerHTML=[['Oczekujące',queue.pending],['W trakcie / bez ACK',queue.in_flight],['Ponownie dostarczane',queue.redelivered],['Dead-letter queue',queue.dead_letters]].map(([label,value])=>`<div class="queue-count"><strong>${value}</strong><span>${label}</span></div>`).join('');
   $('taskTable').innerHTML=table(['Zadanie','Status','Próby','HTTP','Aktualizacja'],(queue.tasks||[]).map(t=>[`<button class="text-button" data-task-trace="${esc(t.trace||t.id)}">${esc(t.id)}</button>`,badge(t.state),t.attempt,t.http_status||'—',time(t.updated)]));
@@ -90,7 +90,7 @@ function render() {
   $('nodeInfo').innerHTML=(c?.nodes||[]).map(n=>`<div class="node-summary"><strong>${esc(n.name)}</strong><small>${esc(n.version)} · CPU ${esc(n.capacity?.cpu)} · RAM ${esc(n.capacity?.memory)}<br>Ready: ${esc((n.conditions||[]).find(x=>x.type==='Ready')?.status||'Unknown')}</small></div>`).join('')+`<p class="muted">${esc(c?.usage_error||'Metryki CPU i RAM dostępne z Metrics Server.')}<br>Zakres obserwatora: węzły i zasoby namespace systems-lab. Bez dostępu do Secretów.</p>`;
   $('serviceTable').innerHTML=table(['Usługa','Cluster IP','Porty','Selektor'],(c?.services||[]).map(s=>[esc(s.name),esc(s.ip),(s.ports||[]).map(p=>esc(p.port)+'/'+esc(p.protocol)).join(', '),`<span class="code">${esc(JSON.stringify(s.selector))}</span>`]));
   $('kubeEvents').innerHTML=table(['Czas','Powód','Zasób','Wiadomość'],(c?.events||[]).slice(0,25).map(e=>[time(e.time),esc(e.reason),esc(e.object?.name),esc(e.message)]));
-  $('lastUpdate').textContent=`Odczyt panelu ${time(state.at)} · discovery ${time(c?.at)}`;
+  window.labLearningUpdate?.(state);window.labPerformanceState?.(state);$('lastUpdate').textContent=`Odczyt panelu ${time(state.at)} · discovery ${time(c?.at)}`;
 }
 async function refresh() {if(busy)return;busy=true;try{state=await request('/api/state');render();}catch(e){$('connection').textContent='Brak połączenia · ponawiam';$('connectionDot').className='status-dot';}finally{busy=false;}}
 async function init() {try{token=(await request('/api/session')).token;await refresh();}catch(e){notify('Panel uruchamia się. Ponawiam połączenie.',true);setTimeout(init,3000);return;}setInterval(refresh,2000);}

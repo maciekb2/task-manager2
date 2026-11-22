@@ -54,7 +54,7 @@ Neither discovery annotations nor dependency links prove traffic occurred.
 * HTTP errors are outcomes, not random synthetic task success. For queued checks,
   a non-successful HTTP result triggers retry and ultimately DLQ.
 * `EVENTS` retains correlated hop/action events. Control replays them after restart;
-  its in-memory recent ring is bounded to 3000 events. Result-store persists gateway
+  its in-memory recent ring is bounded to 10000 display events; the 30-second metrics window is aggregated independently. Result-store persists gateway
   outcomes separately in `lab-http-results` KV. Storage has explicit time/size bounds.
 
 ## Kubernetes Job/CronJob
@@ -75,9 +75,39 @@ credentials/configuration only if absent and reconciles declarative resources.
 
 Minikube/Kubernetes/NATS/Go versions are pinned in code. This is a local development
 release path; no hosted CI/CD or production readiness is claimed. Full production
-auth, public ingress, HA, offsite recovery, eBPF network discovery and a complete
-OpenTelemetry backend are intentionally outside this lab's first release.
+auth, public ingress, HA, offsite recovery, packet-level network discovery are outside the local lab. OpenTelemetry/Jaeger
+are installed locally by the same bootstrap; their storage is intentionally bounded.
 
 References: [Minikube start](https://minikube.sigs.k8s.io/docs/commands/start/),
 [Kubernetes CronJobs](https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/),
 [NATS JetStream](https://docs.nats.io/learn/).
+
+
+## Learning and performance release
+
+The Polish learning UI verifies fresh request IDs and live resource postconditions.
+It does not grant completion based on a timer. The free-play controls are hidden
+while learning. See [the Polish walkthrough](learning-observability.md).
+
+The observer now reads node resource samples through `metrics.k8s.io` as well as
+pod samples. No host agent, host mount, `/proc` scraper or workstation metrics are
+added. Samples retain their API timestamps and measurement windows. Freshness is
+checked against those windows; missing data remains missing. The control service
+keeps up to 15 minutes of resource snapshots in memory. CPU/RAM belong to pods or
+the Kubernetes node, not individual requests.
+
+Requests are instrumented with OpenTelemetry SDK, W3C trace propagation and
+OTLP/HTTP export to a namespace-local Jaeger. Named spans cover HTTP stages,
+validation, enrichment, delay, CPU work, queue publication and processing attempts.
+The task carrier preserves trace context through retry. Inclusive/nested span
+durations must not be summed. The UI queries actual Jaeger spans for waterfalls;
+`/tracing/` exposes its native UI through the existing loopback web proxy.
+
+Jaeger is configured for in-memory retention of up to 5000 traces and loses them
+on restart. It is not a persistent production tracing platform. Metrics/API history
+resets with control; task and HTTP outcome persistence remains in JetStream.
+
+Traffic and p95 use closed, aligned 30-second windows (at most five seconds behind
+now), independent of the display event ring. P95 uses empirical nearest rank.
+Functions aggregate measured wall time; they are selected instrumented operations,
+not a statistical profiler of arbitrary Go functions.

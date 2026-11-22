@@ -5,6 +5,18 @@ live cluster resources, scale services, replace pods, build a queue backlog and
 watch Kubernetes Jobs run. Everything needed to create and configure the lab
 lives in this repository.
 
+## Pierwsze uruchomienie i nauka
+
+Po `make up` otwórz **http://127.0.0.1:18085** i zacznij od **Nauka krok po kroku**.
+Dziewięć polskich lekcji wyjaśnia cel, akcję, oczekiwany wynik i przyczynę zjawiska.
+Zaliczenie wymaga prawdziwych danych z klastra. Słownik tłumaczy Pod, Service,
+Deployment, trace/span, P95, ACK i DLQ.
+
+W **Performance & trace** zobaczysz wykresy CPU/RAM z Kubernetes Metrics API,
+ruch i opóźnienia, czasy funkcji/etapów, czasy zadań oraz waterfall OpenTelemetry.
+Jaeger jest dostępny pod `/tracing/` przez ten sam lokalny panel. Dane nie wymagają
+monitorowania systemu hosta. [Polski przewodnik](docs/learning-observability.md).
+
 ## Start
 
 Prerequisites: **Linux amd64**, a running Docker daemon accessible to your user,
@@ -42,7 +54,7 @@ demo, select **Normalny ruch** in the panel.
 
 ## What is running?
 
-Eleven separately deployed services (one shared, small Go image plus NATS):
+Twelve separately deployed services (one shared, small Go image plus NATS):
 
 ```mermaid
 flowchart LR
@@ -71,13 +83,15 @@ flowchart LR
 * **Echo** performs configurable delay/CPU work and returns a controlled HTTP outcome.
 * **Result store** consumes gateway outcomes and persists them in JetStream KV.
 * **Consumer** processes queued work, persists state, retries and routes to DLQ.
+* **Jaeger** receives standard OTLP spans and serves native trace search/waterfalls.
 * **NATS** stores events, task messages, outcomes and the dead-letter stream on a PVC.
 
 The topology contains resources actually discovered from Kubernetes. Dashed links
 come from dependency annotations on the deployed workloads. Animated links/counts
 come from actual events in the last 30 seconds. Selecting an event shows correlated
-hops, status codes, durations and pod identities. These are application correlation
-events, **not a full OpenTelemetry tracing installation or packet-level network map**.
+hops, status codes, durations and pod identities. The event list is complemented by standard OpenTelemetry SDK spans propagated with
+W3C trace context and exported via OTLP/HTTP to Jaeger. The graph is not packet-level
+network discovery.
 
 ## Try the experiments
 
@@ -96,10 +110,17 @@ events, **not a full OpenTelemetry tracing installation or packet-level network 
 Reset stops traffic, restores the demo replica counts and suspends the CronJob. It
 does **not** erase task/event history or stop in-flight work instantly.
 
+The **Nauka** tab starts with a simplified guided experience. **Mapa przepływu**
+can show just the HTTP path or the full infrastructure. **Performance & trace**
+has component/time filters, function timings, pod resource samples and native spans.
+CPU/RAM samples are not precise per-request CPU accounting. Chart history is 15
+minutes in control memory; Jaeger retains up to 5000 traces in memory.
+
 ## Verify and develop
 
 ```sh
 make test                     # Go unit/race checks; downloads Go 1.26 if needed
+python3 scripts/observability-smoke.py  # Focused OTel, resource history and queue timings
 make smoke                    # Real-cluster HTTP, scale, pod recovery, retry/DLQ,
                               # Job, failed Job and one real CronJob run (~3–5 min)
 ```

@@ -2,6 +2,7 @@
 """Render the complete local lab as a Kubernetes List. No Helm/Python packages."""
 import json
 import os
+from pathlib import Path
 
 NS = "systems-lab"
 IMAGE = os.environ.get("LAB_IMAGE", "systems-lab:dev")
@@ -35,7 +36,8 @@ add("RoleBinding", "observer", api="rbac.authorization.k8s.io/v1",
     roleRef={"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": "observer"},
     subjects=[{"kind": "ServiceAccount", "name": "observer", "namespace": NS}])
 add("ClusterRole", "systems-lab-observer", api="rbac.authorization.k8s.io/v1",
-    rules=[{"apiGroups": [""], "resources": ["nodes"], "verbs": ["get", "list"]}])
+    rules=[{"apiGroups": [""], "resources": ["nodes"], "verbs": ["get", "list"]},
+           {"apiGroups": ["metrics.k8s.io"], "resources": ["nodes"], "verbs": ["get", "list"]}])
 add("ClusterRoleBinding", "systems-lab-observer", api="rbac.authorization.k8s.io/v1",
     roleRef={"apiGroup": "rbac.authorization.k8s.io", "kind": "ClusterRole", "name": "systems-lab-observer"},
     subjects=[{"kind": "ServiceAccount", "name": "observer", "namespace": NS}])
@@ -77,6 +79,23 @@ broker = add("Deployment", "nats", {
 broker["metadata"]["labels"].update(labels)
 broker["metadata"]["annotations"] = {"lab.systems/description": "JetStream: trwałe kolejki, zdarzenia, wyniki i DLQ"}
 add("Service", "nats", {"selector": labels, "ports": [{"name": "client", "port": 4222, "targetPort": 4222}]})
+items[-1]["metadata"]["labels"].update(labels)
+
+add("ConfigMap", "jaeger-config", data={"config.yaml": Path(__file__).with_name("jaeger.yaml").read_text()})
+labels = dict(LABELS, **{"app.kubernetes.io/component": "jaeger"})
+jaeger = add("Deployment", "jaeger", {"replicas": 1, "selector": {"matchLabels": labels},
+    "template": {"metadata": {"labels": labels}, "spec": {"serviceAccountName": "workload", "automountServiceAccountToken": False,
+        "securityContext": {"runAsUser": 10001, "runAsGroup": 10001, "runAsNonRoot": True, "seccompProfile": {"type": "RuntimeDefault"}},
+        "containers": [{"name": "jaeger", "image": "cr.jaegertracing.io/jaegertracing/jaeger:2.23.0", "args": ["--config", "/config/config.yaml"],
+            "ports": [{"containerPort": 16686}, {"containerPort": 4318}],
+            "securityContext": {"allowPrivilegeEscalation": False, "readOnlyRootFilesystem": True, "capabilities": {"drop": ["ALL"]}},
+            "resources": {"requests": {"cpu": "50m", "memory": "128Mi"}, "limits": {"cpu": "1", "memory": "512Mi"}},
+            "readinessProbe": {"httpGet": {"path": "/tracing/", "port": 16686}, "periodSeconds": 3},
+            "volumeMounts": [{"name": "config", "mountPath": "/config", "readOnly": True}]}],
+        "volumes": [{"name": "config", "configMap": {"name": "jaeger-config"}}]}}}, api="apps/v1")
+jaeger["metadata"]["labels"].update(labels)
+jaeger["metadata"]["annotations"] = {"lab.systems/description": "OpenTelemetry: standardowe ślady i czasy spanów; lokalna pamięć 5000 trace"}
+add("Service", "jaeger", {"selector": labels, "ports": [{"name": "query", "port": 16686}, {"name": "otlp-http", "port": 4318}]})
 items[-1]["metadata"]["labels"].update(labels)
 
 roles = {

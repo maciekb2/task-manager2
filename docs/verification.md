@@ -50,3 +50,42 @@ This is not a claim of an uninterrupted first-pass test run.
 Local receipts/logs/screenshots are under ignored `.state/` and `output/playwright/`.
 They are not application dependencies and are not committed. This record covers a
 local development release, not hosted CI/CD, production, offsite recovery or HA.
+
+## Learning and observability extension — 2026-11-22
+
+Final deployed source version: `6cf14461eac7315b`. Twelve deployments (Jaeger is
+the additional component), thirteen normal pods with two HTTP workers.
+
+* Nine guided lessons completed through the live browser UI, each waiting for its
+  actual postcondition: HTTP correlation, resource discovery, pod replacement,
+  three ready replicas, backlog without consumers, retry success, Job, a genuinely
+  scheduled CronJob, and CPU spans plus fresh Kubernetes metrics.
+* Six focused API/runtime checks passed for fresh HTTP, native Jaeger spans across
+  five services, real function timings, pod/node CPU/RAM history, queue timing and
+  producer/consumer trace propagation, and the same-origin native Jaeger UI.
+* Final-source checks confirmed successful and deliberately failed native Jobs
+  expose `job.execute` spans, correct outcomes and Kubernetes start timestamps.
+  The Jaeger JSON API translates the HTTP status attribute to `http.status_code`;
+  the probe was corrected to use that actual API representation.
+* The native waterfall was opened in the live panel. Desktop learning/dashboard
+  and trace screenshots are retained under ignored `output/playwright/`.
+* Unit/race checks cover empirical p95 at small sample counts, the full advertised
+  traffic window independently of the display ring, Kubernetes quantity units,
+  missing resource samples, and the previously accepted control boundaries.
+* Observer Secret access was checked in the **lab namespace**, not merely default.
+  The observer can read node metrics through the Kubernetes API. No host metrics
+  agent, host filesystem mount or direct workstation performance probe was added.
+
+The focused OTel checks ran at source `e907b7b96f3a68b5`; all nine lessons ran at
+`8288f4b15dc8d828`. Final `6cf14461eac7315b` adds native Job outcome spans and their
+timing table; those changes received targeted runtime/UI checks. Unchanged passing
+HTTP/queue/lesson behavior was reused rather than rerunning the full old suite.
+
+Display metrics now use independent closed 30-second buckets and empirical
+nearest-rank p95. HTTP result retrieval caps time-sortable keys before fetching
+values; expired queue records are presented as expired. Smoke assertions require
+fresh observations from their current run.
+
+CPU/RAM are resource samples with API timestamps/windows, not per-span CPU bills.
+Named spans measure selected functions' inclusive wall time. Control chart history
+is held for at most 15 minutes; Jaeger holds at most 5000 traces in volatile memory.

@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 	"io"
 	"math/rand/v2"
 	"net/http"
@@ -24,13 +26,24 @@ func Run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	role := env("ROLE", "web")
-	a := &App{role: role, http: &http.Client{Timeout: 12 * time.Second}, config: DefaultConfig(), seen: map[string]bool{}, events: []Event{}, actionToken: id() + id()}
+	a := &App{role: role, http: &http.Client{Timeout: 12 * time.Second}, config: DefaultConfig(), seen: map[string]bool{}, events: []Event{}, actionToken: id() + id(), perf: NewObservatory()}
+	shutdownTrace, err := initTracing(ctx, role)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		flush, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = shutdownTrace(flush)
+	}()
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, Object{"status": "ok", "role": role}) })
 	if role == "web" {
 		target, _ := url.Parse("http://control:8080")
 		proxy := httputil.NewSingleHostReverseProxy(target)
 		mux.Handle("/api/", proxy)
+		traceTarget, _ := url.Parse("http://jaeger:16686")
+		mux.Handle("/tracing/", httputil.NewSingleHostReverseProxy(traceTarget))
 		mux.Handle("/metrics", proxy)
 		mux.Handle("/", staticHandler())
 	} else {
@@ -95,7 +108,7 @@ func Run() error {
 			}
 		}
 	}
-	server := &http.Server{Addr: ":8080", Handler: mux, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second}
+	server := &http.Server{Addr: ":8080", Handler: a.tracedWork(mux), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second}
 	errors := make(chan error, 1)
 	go func() { errors <- server.ListenAndServe() }()
 	fmt.Println("systems-lab started", role)
@@ -131,15 +144,23 @@ func traceID(r *http.Request) string {
 	return v
 }
 func (a *App) forward(w http.ResponseWriter, r *http.Request) {
-	trace := traceID(r)
+	trace := traceHex(r.Context(), traceID(r))
+	ctx, finish := a.operation(r.Context(), a.role+".forward")
+	status := 502
+	defer func() { finish(status) }()
+	r = r.WithContext(ctx)
 	start := time.Now()
 	if a.role == "validator" {
+		_, validated := a.operation(ctx, "validator.validate")
 		units, err := strconv.Atoi(r.URL.Query().Get("units"))
 		if err != nil || units < 1 || units > 10 {
+			status = 422
+			validated(422)
 			writeJSON(w, 422, Object{"error": "units must be between 1 and 10", "trace": trace})
 			a.emit(Event{Trace: trace, From: "validator", To: "validator", Kind: "validation", Status: 422, Message: "Odrzucono niepoprawną liczbę jednostek"})
 			return
 		}
+		validated(200)
 	}
 	next := env("UPSTREAM", "http://echo:8080")
 	req, err := http.NewRequestWithContext(r.Context(), "GET", next+"/work?"+r.URL.RawQuery, nil)
@@ -148,12 +169,14 @@ func (a *App) forward(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Header.Set("X-Lab-Trace", trace)
+	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
 	if a.role == "enricher" {
+		_, enriched := a.operation(ctx, "enricher.decorate")
 		req.Header.Set("X-Lab-Class", "demo-http")
 		req.Header.Set("X-Lab-Request", id())
+		enriched(200)
 	}
 	resp, err := a.http.Do(req)
-	status := 502
 	targetPod := ""
 	var body []byte
 	if err == nil {
@@ -173,15 +196,23 @@ func (a *App) forward(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 func (a *App) echo(w http.ResponseWriter, r *http.Request) {
-	trace := traceID(r)
+	ctx, finish := a.operation(r.Context(), "echo.work")
+	status := 499
+	defer func() { finish(status) }()
+	r = r.WithContext(ctx)
+	trace := traceHex(ctx, traceID(r))
 	c := a.getConfig()
+	_, finishDelay := a.operation(ctx, "echo.delay")
 	timer := time.NewTimer(time.Duration(c.DelayMS) * time.Millisecond)
 	defer timer.Stop()
 	select {
 	case <-r.Context().Done():
+		finishDelay(499)
 		return
 	case <-timer.C:
 	}
+	finishDelay(200)
+	_, finishCPU := a.operation(ctx, "echo.cpu")
 	deadline := time.Now().Add(time.Duration(c.CPUMS) * time.Millisecond)
 	data := []byte(trace)
 	for time.Now().Before(deadline) {
@@ -189,11 +220,13 @@ func (a *App) echo(w http.ResponseWriter, r *http.Request) {
 		data = sum[:]
 		select {
 		case <-r.Context().Done():
+			finishCPU(499)
 			return
 		default:
 		}
 	}
-	status := 200
+	finishCPU(200)
+	status = 200
 	if rand.IntN(100) < c.ErrorPercent {
 		status = 503
 	}
@@ -202,14 +235,18 @@ func (a *App) echo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, status, Object{"trace": trace, "pod": os.Getenv("HOSTNAME"), "role": "echo", "class": r.Header.Get("X-Lab-Class"), "delay_ms": c.DelayMS, "cpu_ms": c.CPUMS, "http_status": status})
 }
 func (a *App) callGateway(ctx context.Context, from, trace string) (int, error) {
+	ctx, finish := a.operation(traceContext(ctx, trace), from+".request")
+	status := 502
+	defer func() { finish(status) }()
+	trace = traceHex(ctx, trace)
 	req, err := http.NewRequestWithContext(ctx, "GET", "http://gateway:8080/work?units=1", nil)
 	if err != nil {
 		return 0, err
 	}
 	req.Header.Set("X-Lab-Trace", trace)
+	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
 	start := time.Now()
 	resp, err := a.http.Do(req)
-	status := 502
 	target := ""
 	if err == nil {
 		defer resp.Body.Close()
@@ -256,9 +293,12 @@ func (a *App) generate(ctx context.Context) {
 }
 func (a *App) runJob(ctx context.Context) error {
 	trace := id() + id()[:8]
+	ctx, finish := a.operation(traceContext(ctx, trace), "job.execute")
+	outcome := 500
+	defer func() { finish(outcome) }()
 	status, err := a.callGateway(ctx, "job", trace)
-	a.emit(Event{Trace: trace, From: "job", To: "job", Kind: "job", Status: status, Message: "Wykonanie Kubernetes Job"})
 	if os.Getenv("JOB_FAIL") == "true" {
+		a.emit(Event{Trace: trace, From: "job", To: "job", Kind: "job", Status: 500, Message: "Kontrolowana awaria procesu Job"})
 		return fmt.Errorf("kontrolowana awaria zadania demonstracyjnego")
 	}
 	if err != nil {
@@ -267,5 +307,7 @@ func (a *App) runJob(ctx context.Context) error {
 	if status >= 400 {
 		return fmt.Errorf("gateway returned %d", status)
 	}
+	outcome = status
+	a.emit(Event{Trace: trace, From: "job", To: "job", Kind: "job", Status: status, Message: "Zakończono proces Job"})
 	return nil
 }

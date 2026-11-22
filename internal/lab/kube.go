@@ -180,6 +180,8 @@ func (k *Kube) snapshot() Object {
 				v["succeeded"] = numField(o, "status", "succeeded")
 				v["failed"] = numField(o, "status", "failed")
 				v["conditions"] = field(o, "status", "conditions")
+				v["started"] = field(o, "status", "startTime")
+				v["finished"] = field(o, "status", "completionTime")
 			case "cronjobs":
 				v["schedule"] = textField(o, "spec", "schedule")
 				v["suspended"] = field(o, "spec", "suspend")
@@ -211,6 +213,11 @@ func (k *Kube) snapshot() Object {
 		result["usage"] = o["items"]
 	} else {
 		result["usage_error"] = "Metrics Server jeszcze niedostępny"
+	}
+	if o, e := k.object("/apis/metrics.k8s.io/v1beta1/nodes"); e == nil {
+		result["node_usage"] = o["items"]
+	} else {
+		result["node_usage_error"] = "Metryki węzła niedostępne"
 	}
 	result["errors"] = errors
 	return result

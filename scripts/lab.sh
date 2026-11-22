@@ -63,7 +63,7 @@ PY
   python3 "$ROOT/deploy/render.py" > "$ROOT/.state/manifests.json"
   k apply -f "$ROOT/.state/manifests.json"
   k -n "$NS" rollout status deployment/nats --timeout=180s
-  for role in control observer web generator gateway validator enricher echo consumer result-store; do
+  for role in jaeger control observer web generator gateway validator enricher echo consumer result-store; do
     k -n "$NS" rollout status "deployment/$role" --timeout=180s
   done
   printf '%s\n' "$LAB_IMAGE" > "$ROOT/.state/image"

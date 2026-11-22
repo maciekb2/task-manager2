@@ -49,16 +49,24 @@ type Event struct {
 	Message   string    `json:"message,omitempty"`
 	Pod       string    `json:"pod"`
 	TargetPod string    `json:"target_pod,omitempty"`
+	Started   time.Time `json:"started,omitempty"`
+	Operation string    `json:"operation,omitempty"`
+	SpanID    string    `json:"span_id,omitempty"`
 }
 type Task struct {
-	ID       string    `json:"id"`
-	Trace    string    `json:"trace"`
-	State    string    `json:"state"`
-	Failures int       `json:"failures"`
-	Attempt  uint64    `json:"attempt"`
-	Created  time.Time `json:"created"`
-	Updated  time.Time `json:"updated"`
-	Status   int       `json:"http_status"`
+	ID           string    `json:"id"`
+	Trace        string    `json:"trace"`
+	State        string    `json:"state"`
+	Failures     int       `json:"failures"`
+	Attempt      uint64    `json:"attempt"`
+	Created      time.Time `json:"created"`
+	Updated      time.Time `json:"updated"`
+	Status       int       `json:"http_status"`
+	TraceParent  string    `json:"traceparent,omitempty"`
+	FirstStarted time.Time `json:"first_started,omitempty"`
+	Finished     time.Time `json:"finished,omitempty"`
+	TotalMS      float64   `json:"total_ms"`
+	QueueMS      float64   `json:"queue_ms"`
 }
 type App struct {
 	role        string
@@ -73,6 +81,7 @@ type App struct {
 	actionMu    sync.Mutex
 	cluster     Object
 	actionToken string
+	perf        *Observatory
 }
 
 func id() string { var b [12]byte; _, _ = rand.Read(b[:]); return hex.EncodeToString(b[:]) }

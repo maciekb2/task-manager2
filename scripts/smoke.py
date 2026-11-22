@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 import time
+from datetime import datetime, timezone
 import urllib.error
 import urllib.request
 
@@ -16,6 +17,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--resume-failed-job', help='Continue the failed-Job/CronJob checks after a fixture-only interruption')
 args = parser.parse_args()
 checks = []
+run_started=datetime.now(timezone.utc)
+def fresh(event):
+    return datetime.fromisoformat(event['time'].replace('Z','+00:00')) >= run_started
 if args.resume_failed_job and (ROOT / '.state/smoke-results.json').exists():
     checks = json.loads((ROOT / '.state/smoke-results.json').read_text()).get('checks', [])
 
@@ -69,7 +73,7 @@ def k(*args):
 token = api('/api/session', auth=False)['token']
 try:
     if not args.resume_failed_job:
-        initial = wait('discovery: 11 deployments, nodes, services, no API errors', lambda s: len(s.get('cluster', {}).get('deployments', [])) == 11 and bool(s['cluster']['nodes']) and not s['cluster']['errors'])
+        initial = wait('discovery: 12 deployments, nodes, services, no API errors', lambda s: len(s.get('cluster', {}).get('deployments', [])) == 12 and bool(s['cluster']['nodes']) and not s['cluster']['errors'])
         try:
             api('/api/action', {'action': 'scale', 'target': 'echo', 'replicas': 1}, auth=False)
             raise AssertionError('unauthenticated mutation succeeded')
@@ -77,24 +81,24 @@ try:
             assert error.code == 403
         forbidden({'action': 'scale', 'target': 'nats', 'replicas': 0})
         forbidden({'action': 'scale', 'target': 'kube-system', 'replicas': 0})
-        assert k('auth', 'can-i', 'get', 'secrets', '--as=system:serviceaccount:systems-lab:observer') == 'no'
+        assert k('auth', 'can-i', 'get', 'secrets', '-n', 'systems-lab', '--as=system:serviceaccount:systems-lab:observer') == 'no'
         assert k('auth', 'can-i', 'patch', 'deployments', '-n', 'default', '--as=system:serviceaccount:systems-lab:control') == 'no'
         checks.append('mutation authentication and RBAC boundaries')
         print('PASS mutation authentication and RBAC boundaries', flush=True)
 
         config(rps=5, duration=10)
-        s = wait('real HTTP through generator, gateway, validator, enricher, echo', lambda s: all(any(e['from'] == source and e['to'] == target and e['status'] == 200 for e in s['events']) for source, target in [('generator','gateway'),('gateway','validator'),('validator','enricher'),('enricher','echo')]))
-        event = next(e for e in s['events'] if e['from'] == 'generator' and e['status'] == 200)
+        s = wait('real HTTP through generator, gateway, validator, enricher, echo', lambda s: all(any(fresh(e) and e['from'] == source and e['to'] == target and e['status'] == 200 for e in s['events']) for source, target in [('generator','gateway'),('gateway','validator'),('validator','enricher'),('enricher','echo')]))
+        event = next(e for e in s['events'] if fresh(e) and e['from'] == 'generator' and e['status'] == 200)
         trace = api('/api/trace?id=' + event['trace'])
         assert len({e['from'] for e in trace if e['kind'] == 'http'}) >= 4
-        assert api('/api/results'), 'result-store did not persist HTTP outcome'
+        assert any(fresh(e) for e in api('/api/results')), 'result-store did not persist HTTP outcome'
         time.sleep(11)
         assert api('/api/state')['config']['run_until'] <= time.time()
         checks.append('correlated trace, persisted HTTP result, bounded generator duration')
         print('PASS correlated trace, persisted HTTP result, bounded generator duration', flush=True)
 
         config(rps=3, errors=100, duration=8)
-        wait('controlled HTTP 503 propagates through the chain', lambda s: any(e['from'] == 'generator' and e['status'] == 503 for e in s['events']))
+        wait('controlled HTTP 503 propagates through the chain', lambda s: any(fresh(e) and e['from'] == 'generator' and e['status'] == 503 for e in s['events']))
         config()
         action(action='scale', target='echo', replicas=3)
         s = wait('scale echo to three real ready pods', lambda s: replicas(s, 'echo', 3))

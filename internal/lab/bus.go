@@ -74,6 +74,10 @@ func (b *Bus) emit(e Event) error {
 }
 func (b *Bus) putTask(t Task) error {
 	t.Updated = time.Now().UTC()
+	if t.State == "completed" || t.State == "dead-letter" {
+		t.Finished = t.Updated
+		t.TotalMS = float64(t.Finished.Sub(t.Created).Microseconds()) / 1000
+	}
 	raw, _ := json.Marshal(t)
 	_, err := b.tasks.Put(t.ID, raw)
 	return err

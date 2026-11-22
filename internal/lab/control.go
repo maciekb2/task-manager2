@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/nats-io/nats.go"
+	"go.opentelemetry.io/otel/trace"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -51,8 +53,9 @@ func (a *App) startControl(ctx context.Context, mux *http.ServeMux) error {
 			return
 		}
 		a.seen[e.ID] = true
+		a.perf.record(e)
 		a.events = append(a.events, e)
-		if len(a.events) > 3000 {
+		if len(a.events) > 10000 {
 			delete(a.seen, a.events[0].ID)
 			a.events = a.events[1:]
 		}
@@ -70,6 +73,7 @@ func (a *App) startControl(ctx context.Context, mux *http.ServeMux) error {
 				if resp.StatusCode == 200 && json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&v) == nil {
 					a.mu.Lock()
 					a.cluster = v
+					a.perf.resource(v)
 					a.mu.Unlock()
 				}
 				resp.Body.Close()
@@ -98,8 +102,6 @@ func (a *App) startControl(ctx context.Context, mux *http.ServeMux) error {
 		a.mu.RUnlock()
 		sort.Slice(events, func(i, j int) bool { return events[i].Time.Before(events[j].Time) })
 		edges := map[string]Object{}
-		requests, errors := 0, 0
-		latencies := []float64{}
 		for _, e := range events {
 			if time.Since(e.Time) > 30*time.Second {
 				continue
@@ -115,19 +117,8 @@ func (a *App) startControl(ctx context.Context, mux *http.ServeMux) error {
 				edge["errors"] = edge["errors"].(int) + 1
 			}
 			edge["latency_ms"] = e.Duration
-			if e.Kind == "http" && e.To == "gateway" {
-				requests++
-				if e.Status >= 400 {
-					errors++
-				}
-				latencies = append(latencies, e.Duration)
-			}
 		}
-		p95 := 0.0
-		if len(latencies) > 0 {
-			sort.Float64s(latencies)
-			p95 = latencies[(len(latencies)-1)*95/100]
-		}
+
 		if len(events) > 120 {
 			events = events[len(events)-120:]
 		}
@@ -135,7 +126,27 @@ func (a *App) startControl(ctx context.Context, mux *http.ServeMux) error {
 		for i := len(events) - 1; i >= 0; i-- {
 			reverse = append(reverse, events[i])
 		}
-		writeJSON(w, 200, Object{"cluster": cluster, "config": config, "events": reverse, "edges": edges, "queue": a.queueState(), "metrics": Object{"requests": requests, "errors": errors, "rps": float64(requests) / 30, "p95_ms": p95, "window_seconds": 30}, "self": Object{"role": "control", "namespace": Namespace, "discovery": "Kubernetes API (3 s)", "transport": "NATS JetStream", "retention": "events 1h / results 24h", "version": env("LAB_VERSION", "dev")}, "at": time.Now().UTC()})
+		writeJSON(w, 200, Object{"cluster": cluster, "config": config, "events": reverse, "edges": edges, "queue": a.queueState(), "metrics": a.perf.window(time.Now()), "self": Object{"role": "control", "namespace": Namespace, "discovery": "Kubernetes API (3 s)", "transport": "NATS JetStream", "retention": "events 1h / results 24h", "version": env("LAB_VERSION", "dev")}, "at": time.Now().UTC()})
+	})
+	mux.HandleFunc("GET /api/performance", func(w http.ResponseWriter, r *http.Request) {
+		minutes, _ := strconv.Atoi(r.URL.Query().Get("minutes"))
+		writeJSON(w, 200, a.perf.report(time.Now(), minutes))
+	})
+	mux.HandleFunc("GET /api/otel/trace", func(w http.ResponseWriter, r *http.Request) {
+		tid := r.URL.Query().Get("id")
+		if _, e := trace.TraceIDFromHex(tid); e != nil {
+			fail(w, fmt.Errorf("invalid trace ID"))
+			return
+		}
+		resp, e := a.http.Get("http://jaeger:16686/tracing/api/traces/" + tid)
+		if e != nil {
+			writeJSON(w, 503, Object{"error": "Jaeger niedostępny"})
+			return
+		}
+		defer resp.Body.Close()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(resp.StatusCode)
+		_, _ = io.Copy(w, io.LimitReader(resp.Body, 4<<20))
 	})
 	mux.HandleFunc("GET /api/trace", func(w http.ResponseWriter, r *http.Request) {
 		trace := r.URL.Query().Get("id")
