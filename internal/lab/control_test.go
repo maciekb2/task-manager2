@@ -39,7 +39,7 @@ func TestTrafficHasResourceAndTimeBounds(t *testing.T) {
 	if e := c.Validate(); e != nil {
 		t.Fatal(e)
 	}
-	for _, mutate := range []func(*Config){func(c *Config) { c.RPS = 51 }, func(c *Config) { c.Concurrency = 0 }, func(c *Config) { c.DelayMS = 3001 }, func(c *Config) { c.CPUMS = 51 }, func(c *Config) { c.ErrorPercent = 101 }, func(c *Config) { c.RunUntil = time.Now().Add(time.Hour).Unix() }, func(c *Config) { c.RunUntil = 0 }} {
+	for _, mutate := range []func(*Config){func(c *Config) { c.PayloadBytes = -1 }, func(c *Config) { c.PayloadBytes = 8193 }, func(c *Config) { c.RPS = 51 }, func(c *Config) { c.Concurrency = 0 }, func(c *Config) { c.DelayMS = 3001 }, func(c *Config) { c.CPUMS = 51 }, func(c *Config) { c.ErrorPercent = 101 }, func(c *Config) { c.RunUntil = time.Now().Add(time.Hour).Unix() }, func(c *Config) { c.RunUntil = 0 }} {
 		bad := c
 		mutate(&bad)
 		if bad.Validate() == nil {

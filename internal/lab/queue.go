@@ -67,7 +67,7 @@ func (a *App) processMessage(ctx context.Context, msg *nats.Msg) {
 		_ = msg.NakWithDelay(time.Second)
 		return
 	}
-	a.emit(Event{Trace: t.Trace, From: "nats", To: "consumer", Kind: "queue", Task: t.ID, Attempt: t.Attempt, Message: "Odebrano zadanie"})
+	a.emit(Event{Trace: t.Trace, From: "nats", To: "consumer", Kind: "queue", Task: t.ID, Attempt: t.Attempt, TransferBytes: byteCount(len(msg.Data)), TransferProtocol: "nats-message", Message: "Odebrano zadanie"})
 	status := 503
 	var checkErr error
 	if t.Failures >= 0 && int(t.Attempt) > t.Failures {
@@ -86,7 +86,7 @@ func (a *App) processMessage(ctx context.Context, msg *nats.Msg) {
 				_ = msg.NakWithDelay(2 * time.Second)
 				return
 			}
-			a.emit(Event{Trace: t.Trace, From: "consumer", To: "dead-letter", Kind: "queue", Task: t.ID, Attempt: t.Attempt, Status: status, Message: "Limit 3 prób: zadanie w DLQ"})
+			a.emit(Event{Trace: t.Trace, From: "consumer", To: "dead-letter", Kind: "queue", Task: t.ID, Attempt: t.Attempt, Status: status, TransferBytes: byteCount(len(raw)), TransferProtocol: "nats-message", Message: "Limit 3 prób: zadanie w DLQ"})
 			_ = msg.AckSync()
 		} else {
 			t.State = "retry"
@@ -161,7 +161,7 @@ func (a *App) submitTasks(count, failures int) ([]string, error) {
 			return ids, e
 		}
 		finish(200)
-		a.emit(Event{Trace: t.Trace, From: "control", To: "nats", Kind: "queue", Task: t.ID, Message: "Zadanie opublikowane"})
+		a.emit(Event{Trace: t.Trace, From: "control", To: "nats", Kind: "queue", Task: t.ID, TransferBytes: byteCount(len(raw)), TransferProtocol: "nats-message", Message: "Zadanie opublikowane"})
 		ids = append(ids, t.ID)
 	}
 	return ids, nil

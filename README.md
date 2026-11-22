@@ -88,10 +88,38 @@ flowchart LR
 
 The topology contains resources actually discovered from Kubernetes. Dashed links
 come from dependency annotations on the deployed workloads. Animated links/counts
-come from actual events in the last 30 seconds. Selecting an event shows correlated
+come from actual events. Animation marks activity in the last five seconds;
+counters cover the available events in the last 30 seconds. Selecting an event shows correlated
 hops, status codes, durations and pod identities. The event list is complemented by standard OpenTelemetry SDK spans propagated with
 W3C trace context and exported via OTLP/HTTP to Jaeger. The graph is not packet-level
 network discovery.
+
+## See application data moving
+
+Open **Ruch sieciowy** for HTTP response-body and JetStream message-payload
+transfer rates, measured per hop. It shows KiB/s and Mbit/s, completions per
+second, mean payload size and mean interval between observed completions.
+Counters use closed five-second buckets and a 30-second average, independently
+of the limited recent-event display. History covers up to five minutes since
+controller startup. The interface refreshes this report every five seconds.
+
+Set **Dodatkowe dane odpowiedzi** to +8 KiB and compare 5 with 20 requests/s.
+At 20 requests/s the nominal request interval is 50 ms; the added payload alone
+would be 160 KiB/s per hop. Actual values include the JSON body and depend on
+concurrency, latency and successful completion. A response traverses four HTTP
+hops, so summing them counts those bytes four times. This is application payload
+throughput, not an interface capacity test or a TCP packet capture.
+
+The map's **Na połączeniach → Transfer danych aplikacji** mode labels each
+observed hop with its 30-second average. HTTP arrows reverse to show response
+data returning to the client. JetStream arrows follow publish/delivery direction;
+redelivery counts again, while ACK/NAK is excluded. Headers, TCP/IP, TLS, CNI,
+NATS KV, observability and Kubernetes API traffic are outside this measurement.
+No host agent or privileged packet sniffer is installed.
+
+Run `python3 scripts/network-smoke.py` for focused byte-accounting, payload-size,
+retry and stopped-traffic acceptance against the local lab (`LAB_URL` overrides
+the URL). It restores stopped traffic and the baseline response configuration.
 
 ## Try the experiments
 

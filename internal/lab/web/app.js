@@ -24,12 +24,12 @@ function switchTab(tab) {
 window.addEventListener('popstate',()=>switchTab(location.hash.slice(1)||'learn'));
 document.querySelectorAll('[data-tab]').forEach(e=>e.addEventListener('click',()=>switchTab(e.dataset.tab)));
 for(const name of ['rps','concurrency']) $(name).addEventListener('input',()=>$(name+'Value').value=$(name).value);
-function values() {return {rps:+$('rps').value,concurrency:+$('concurrency').value,delay_ms:+$('delay').value,error_percent:+$('errors').value,cpu_ms:+$('cpu').value,duration_seconds:+$('duration').value};}
+function values() {return {payload_bytes:+$('payload').value,rps:+$('rps').value,concurrency:+$('concurrency').value,delay_ms:+$('delay').value,error_percent:+$('errors').value,cpu_ms:+$('cpu').value,duration_seconds:+$('duration').value};}
 async function configure(config) {try{await request('/api/config',config);notify(config.rps?'Eksperyment uruchomiony. Obserwuj rzeczywisty ruch.':'Generator zatrzymany. Żądania już przyjęte kończą pracę.');await refresh();}catch(e){notify(e.message,true);}}
 $('trafficForm').addEventListener('submit',e=>{e.preventDefault();configure(values());});
 $('stopTraffic').addEventListener('click',()=>configure({...values(),rps:0}));
 const scenarios={normal:{rps:5,concurrency:4,delay_ms:40,error_percent:0,cpu_ms:0},slow:{rps:10,concurrency:12,delay_ms:800,error_percent:0,cpu_ms:0},errors:{rps:5,concurrency:4,delay_ms:40,error_percent:50,cpu_ms:0},cpu:{rps:20,concurrency:12,delay_ms:0,error_percent:0,cpu_ms:40}};
-document.querySelectorAll('[data-scenario]').forEach(button=>button.addEventListener('click',()=>{const c=scenarios[button.dataset.scenario];for(const [key,input] of Object.entries({rps:'rps',concurrency:'concurrency',delay_ms:'delay',error_percent:'errors',cpu_ms:'cpu'}))$(input).value=c[key];$('rpsValue').value=c.rps;$('concurrencyValue').value=c.concurrency;configure({...c,duration_seconds:+$('duration').value});}));
+document.querySelectorAll('[data-scenario]').forEach(button=>button.addEventListener('click',()=>{const c=scenarios[button.dataset.scenario];for(const [key,input] of Object.entries({rps:'rps',concurrency:'concurrency',delay_ms:'delay',error_percent:'errors',cpu_ms:'cpu'}))$(input).value=c[key];$('rpsValue').value=c.rps;$('concurrencyValue').value=c.concurrency;configure({...c,payload_bytes:+$('payload').value,duration_seconds:+$('duration').value});}));
 $('reset').addEventListener('click',()=>act({action:'reset'},'Przywrócono konfigurację, repliki i wstrzymano CronJob. Historia pozostała.'));
 $('pauseConsumer').addEventListener('click',()=>act({action:'scale',target:'consumer',replicas:0},'Konsument wygaszany; przyjęte zadania mogą jeszcze kończyć pracę.'));
 $('resumeConsumer').addEventListener('click',()=>act({action:'scale',target:'consumer',replicas:1},'Konsument wraca do pracy'));
@@ -38,6 +38,7 @@ $('successJob').addEventListener('click',()=>act({action:'job',failures:0},'Utwo
 $('failedJob').addEventListener('click',()=>act({action:'job',failures:1},'Utworzono Job z kontrolowanym błędem'));
 $('startCron').addEventListener('click',()=>act({action:'cron',suspended:false,schedule:$('schedule').value},'Harmonogram włączony'));
 $('stopCron').addEventListener('click',()=>act({action:'cron',suspended:true,schedule:$('schedule').value},'Harmonogram wstrzymany'));
+$('graphMetric').addEventListener('change',()=>state&&renderGraph());
 $('declared').addEventListener('change',()=>state&&renderGraph());$('graphScope').addEventListener('change',()=>state&&renderGraph());
 $('loadResults').addEventListener('click',async()=>{try{const rows=await request('/api/results');$('resultTable').innerHTML=table(['Czas','Ślad','HTTP','Czas całego łańcucha'],rows.map(e=>[time(e.time),`<button class="text-button" data-result-trace="${esc(e.trace)}">${esc(e.trace)}</button>`,`<span class="code ${e.status>=400?'bad':''}">${e.status}</span>`,`${e.duration_ms.toFixed(1)} ms`]));$('resultTable').querySelectorAll('[data-result-trace]').forEach(b=>b.addEventListener('click',()=>renderTrace(b.dataset.resultTrace)));}catch(e){notify(e.message,true);}});
 const renderedMarkup=new WeakMap();
@@ -68,6 +69,7 @@ function deployments() {return state?.cluster?.deployments||[];}
 function podList(component) {return (state?.cluster?.pods||[]).filter(p=>p.component===component);}
 function usageFor(pod) {const usage=(state?.cluster?.usage||[]).find(p=>p.metadata?.name===pod);if(!usage)return '';return (usage.containers||[]).map(c=>`CPU ${c.usage?.cpu||'—'} · RAM ${c.usage?.memory||'—'}`).join(', ');}
 function renderGraph() {
+  $('graphObservedLegend').textContent=$('graphMetric').value==='transfer'?'Payload / 30 s · strzałka HTTP: odpowiedź wraca do klienta':'Liczba przejść / 30 s · animacja: ruch w ostatnich 5 s';
   const nodes=deployments().map(d=>({...d,id:d.component||d.name}));
   if((state.cluster?.cronjobs||[]).length) nodes.push({id:'job',name:'job',ready:(state.cluster?.jobs||[]).filter(j=>j.succeeded>0).length,replicas:(state.cluster?.jobs||[]).length});
   const simple=$('graphScope').value==='flow';if(simple){for(let i=nodes.length-1;i>=0;i--)if(!['generator','gateway','validator','enricher','echo'].includes(nodes[i].id))nodes.splice(i,1);}const present=new Set(nodes.map(n=>n.id));
@@ -81,9 +83,11 @@ function renderGraph() {
     const p=positions[edge.from],q=positions[edge.to];if(!p||!q)continue;
     const dx=q[0]-p[0],dy=q[1]-p[1],horizontal=Math.abs(dx)>Math.abs(dy);const start=[p[0]+(horizontal?Math.sign(dx)*77:0),p[1]+(horizontal?0:Math.sign(dy)*31)];const end=[q[0]-(horizontal?Math.sign(dx)*77:0),q[1]-(horizontal?0:Math.sign(dy)*31)];
     const curve=`M${start} C${horizontal?(start[0]+end[0])/2:start[0]},${horizontal?start[1]:(start[1]+end[1])/2} ${horizontal?(start[0]+end[0])/2:end[0]},${horizontal?end[1]:(start[1]+end[1])/2} ${end}`;
+    const transfer=$('graphMetric').value==='transfer',measurement=(state.network?.edges||[]).find(e=>e.from===edge.from&&e.to===edge.to);
+    const response=transfer&&measurement?.protocol==='http-response';
     const age=Date.now()-Date.parse(edge.last_event_at),fresh=age>=0&&age<5000;
-    svg+=`<g data-key="${esc(edge.from+'→'+edge.to)}"><path data-last-event="${esc(edge.last_event_at||'')}" class="edge ${edge.count?'observed':''} ${fresh?'hot':''} ${edge.errors?'bad':''}" d="${curve}" marker-end="url(#arrow)"/><title>${esc(edge.from)} → ${esc(edge.to)}: ${edge.count||0} przejść / 30 s${edge.last_event_at?' · ostatnie '+time(edge.last_event_at):' · zależność z konfiguracji'}</title>`;
-    if(edge.count)svg+=`<text class="edge-label" x="${(start[0]+end[0])/2+5}" y="${(start[1]+end[1])/2-7}">${esc(edge.count)} ${edge.kind==='http'?'req':'events'}</text>`;
+    svg+=`<g data-key="${esc(edge.from+'→'+edge.to)}"><path data-last-event="${esc(edge.last_event_at||'')}" class="edge ${edge.count?'observed':''} ${fresh?'hot':''} ${edge.errors?'bad':''}" d="${curve}" ${response?'marker-start':'marker-end'}="url(#arrow)" style="${response?'animation-direction:reverse':''}"/><title>${esc(edge.from)} → ${esc(edge.to)}: ${edge.count||0} przejść / 30 s${edge.last_event_at?' · ostatnie '+time(edge.last_event_at):' · zależność z konfiguracji'}</title>`;
+    if(edge.count)svg+=`<text class="edge-label" text-anchor="middle" x="${(start[0]+end[0])/2}" y="${(start[1]+end[1])/2-(transfer&&horizontal?40:7)}">${transfer?(measurement?`${(measurement.bytes_per_second/1024).toFixed(2)} KiB/s`:'bez pomiaru'):`${esc(edge.count)} ${edge.kind==='http'?'req':'events'}`}</text>`;
     svg+='</g>';
   }
   svg+='</g><g data-key="nodes">';
@@ -132,7 +136,7 @@ function render() {
   markup('nodeInfo',(c?.nodes||[]).map(n=>`<div class="node-summary"><strong>${esc(n.name)}</strong><small>${esc(n.version)} · CPU ${esc(n.capacity?.cpu)} · RAM ${esc(n.capacity?.memory)}<br>Ready: ${esc((n.conditions||[]).find(x=>x.type==='Ready')?.status||'Unknown')}</small></div>`).join('')+`<p class="muted">${esc(c?.usage_error||'Metryki CPU i RAM dostępne z Metrics Server.')}<br>Zakres obserwatora: węzły i zasoby namespace systems-lab. Bez dostępu do Secretów.</p>`);
   markup('serviceTable',table(['Usługa','Cluster IP','Porty','Selektor'],(c?.services||[]).map(s=>[esc(s.name),esc(s.ip),(s.ports||[]).map(p=>esc(p.port)+'/'+esc(p.protocol)).join(', '),`<span class="code">${esc(JSON.stringify(s.selector))}</span>`])));
   markup('kubeEvents',table(['Czas','Powód','Zasób','Wiadomość'],(c?.events||[]).slice(0,25).map(e=>[time(e.time),esc(e.reason),esc(e.object?.name),esc(e.message)])));
-  window.labLearningUpdate?.(state);window.labPerformanceState?.(state);$('lastUpdate').textContent=`Odczyt panelu ${time(state.at)} · discovery ${time(c?.at)}`;
+  window.labNetworkState?.(state);window.labLearningUpdate?.(state);window.labPerformanceState?.(state);$('lastUpdate').textContent=`Odczyt panelu ${time(state.at)} · discovery ${time(c?.at)}`;
 }
 async function refresh() {if(busy)return;busy=true;try{state=await request('/api/state');render();$('refreshStatus').textContent=`Odczyt ${time(state.at)} · co 3 s`;}catch(e){$('connection').textContent='Brak połączenia · ponawiam';$('connectionDot').className='status-dot';$('refreshStatus').textContent='Odczyt nieudany · ponawiam co 3 s';}finally{busy=false;}}
 async function init() {try{token=(await request('/api/session')).token;await refresh();}catch(e){notify('Panel uruchamia się. Ponawiam połączenie.',true);setTimeout(init,3000);return;}setInterval(()=>{if(!document.hidden)refresh();},3000);}

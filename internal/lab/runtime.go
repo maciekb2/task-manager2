@@ -179,16 +179,18 @@ func (a *App) forward(w http.ResponseWriter, r *http.Request) {
 	resp, err := a.http.Do(req)
 	targetPod := ""
 	var body []byte
+	var transferred *int64
 	if err == nil {
 		defer resp.Body.Close()
 		status = resp.StatusCode
 		targetPod = resp.Header.Get("X-Lab-Pod")
 		body, _ = io.ReadAll(io.LimitReader(resp.Body, 16384))
+		transferred = byteCount(len(body))
 	} else {
 		body, _ = json.Marshal(Object{"error": "upstream unavailable", "trace": trace})
 	}
 	to := strings.Split(strings.TrimPrefix(next, "http://"), ":")[0]
-	a.emit(Event{Trace: trace, From: a.role, To: to, Kind: "http", Status: status, Duration: float64(time.Since(start).Microseconds()) / 1000, TargetPod: targetPod})
+	a.emit(Event{Trace: trace, From: a.role, To: to, Kind: "http", TransferBytes: transferred, TransferProtocol: "http-response", Status: status, Duration: float64(time.Since(start).Microseconds()) / 1000, TargetPod: targetPod})
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Lab-Trace", trace)
 	w.Header().Set("X-Lab-Pod", os.Getenv("HOSTNAME"))
@@ -232,7 +234,7 @@ func (a *App) echo(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("X-Lab-Pod", os.Getenv("HOSTNAME"))
 	w.Header().Set("X-Lab-Trace", trace)
-	writeJSON(w, status, Object{"trace": trace, "pod": os.Getenv("HOSTNAME"), "role": "echo", "class": r.Header.Get("X-Lab-Class"), "delay_ms": c.DelayMS, "cpu_ms": c.CPUMS, "http_status": status})
+	writeJSON(w, status, Object{"trace": trace, "pod": os.Getenv("HOSTNAME"), "role": "echo", "class": r.Header.Get("X-Lab-Class"), "delay_ms": c.DelayMS, "cpu_ms": c.CPUMS, "http_status": status, "payload": strings.Repeat("x", c.PayloadBytes)})
 }
 func (a *App) callGateway(ctx context.Context, from, trace string) (int, error) {
 	ctx, finish := a.operation(traceContext(ctx, trace), from+".request")
@@ -248,13 +250,15 @@ func (a *App) callGateway(ctx context.Context, from, trace string) (int, error) 
 	start := time.Now()
 	resp, err := a.http.Do(req)
 	target := ""
+	var transferred *int64
 	if err == nil {
 		defer resp.Body.Close()
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 16384))
+		n, _ := io.Copy(io.Discard, io.LimitReader(resp.Body, 16384))
+		transferred = &n
 		status = resp.StatusCode
 		target = resp.Header.Get("X-Lab-Pod")
 	}
-	a.emit(Event{Trace: trace, From: from, To: "gateway", Kind: "http", Status: status, Duration: float64(time.Since(start).Microseconds()) / 1000, TargetPod: target})
+	a.emit(Event{Trace: trace, From: from, To: "gateway", Kind: "http", TransferBytes: transferred, TransferProtocol: "http-response", Status: status, Duration: float64(time.Since(start).Microseconds()) / 1000, TargetPod: target})
 	return status, err
 }
 func (a *App) generate(ctx context.Context) {

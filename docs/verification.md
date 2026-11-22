@@ -122,3 +122,40 @@ checks passed. All twelve deployments are ready; test traffic is stopped.
 
 This is a targeted UI acceptance. Earlier HTTP/queue/Job/lesson evidence above is
 reused; the complete older cluster suite was not rerun for presentation changes.
+
+## Application network traffic — 2026-11-22
+
+Deployed source: `6d4508532b6ae99f`. Added one **Ruch sieciowy** section, independent
+five-second transfer buckets, 30-second averages, per-hop payload sizes/completion
+cadence, KiB/s/Mbit/s, a five-minute history and response-size control (0–8192 extra
+bytes). Map transfer mode labels rates and reverses HTTP arrows for returning
+response bodies. Text labels sit above service boxes rather than underneath them.
+
+Byte observations come from actual HTTP response reads and serialized task/DLQ
+payloads at instrumented publish/delivery points. Unmeasured/logical queue events
+are excluded. This does not measure interface capacity, packets, protocol headers,
+ACK/NAK, NATS KV, telemetry, Kubernetes API traffic or TCP/TLS/CNI overhead. The
+same payload crossing four HTTP hops contributes to four hop counters. Configured
+cadence and measured completion cadence are labeled separately. History is in
+controller memory; recent events can be replayed from the existing NATS stream.
+
+* `make test` passed with regression coverage for exact closed-window boundaries,
+  out-of-order observations, transfer direction, per-hop rates and intervals,
+  excluding logical queue events, 12,000 observations independent of the display
+  ring, stopped-traffic expiry and payload bounds.
+* `python3 scripts/network-smoke.py` passed ten focused runtime checks: zero/8 KiB
+  payload cases, exactly 8192 additional observed bytes on each of four HTTP hops,
+  closed-window rate arithmetic, one queue publication/two retry deliveries with
+  identical payload sizes, NAK exclusion, queue throughput and zero recent HTTP
+  throughput after stopping.
+* Live browser acceptance covered the new menu, payload/rate controls, nominal
+  50 ms cadence at 20 req/s, measured flows/table, stable chart DOM, map rates and
+  response direction, original event mode and a 390 px layout without page overflow.
+  At 20 req/s with 8 KiB additional payload, a five-second sample measured about
+  653 KiB/s across the four HTTP hops, including the JSON body.
+* API/browser checks ran on `eed0d95cf2ea0202`; final `6d4508532b6ae99f` only moves
+  long map labels above boxes. Its focused browser check verified no label/service
+  rectangle overlap and the stopped generator. Existing backend evidence is reused.
+
+Screenshots and detailed receipts remain under ignored `output/playwright/` and
+`.state/network-*`. This is a local lab release, not a production network audit.

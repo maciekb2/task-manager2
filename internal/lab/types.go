@@ -16,6 +16,7 @@ const Namespace = "systems-lab"
 const ManagedLabel = "app.kubernetes.io/part-of=systems-lab"
 
 type Config struct {
+	PayloadBytes int   `json:"payload_bytes"`
 	RPS          int   `json:"rps"`
 	Concurrency  int   `json:"concurrency"`
 	DelayMS      int   `json:"delay_ms"`
@@ -26,8 +27,8 @@ type Config struct {
 
 func DefaultConfig() Config { return Config{Concurrency: 4, DelayMS: 40} }
 func (c Config) Validate() error {
-	if c.RPS < 0 || c.RPS > 50 || c.Concurrency < 1 || c.Concurrency > 20 || c.DelayMS < 0 || c.DelayMS > 3000 || c.ErrorPercent < 0 || c.ErrorPercent > 100 || c.CPUMS < 0 || c.CPUMS > 50 {
-		return fmt.Errorf("parametry poza zakresem: rps 0–50, concurrency 1–20, delay 0–3000 ms, error 0–100%%, cpu 0–50 ms")
+	if c.PayloadBytes < 0 || c.PayloadBytes > 8192 || c.RPS < 0 || c.RPS > 50 || c.Concurrency < 1 || c.Concurrency > 20 || c.DelayMS < 0 || c.DelayMS > 3000 || c.ErrorPercent < 0 || c.ErrorPercent > 100 || c.CPUMS < 0 || c.CPUMS > 50 {
+		return fmt.Errorf("parametry poza zakresem: rps 0–50, concurrency 1–20, delay 0–3000 ms, error 0–100%%, cpu 0–50 ms, payload 0–8192 B")
 	}
 	if c.RPS > 0 && (c.RunUntil <= time.Now().Unix() || c.RunUntil > time.Now().Add(301*time.Second).Unix()) {
 		return fmt.Errorf("ruch wymaga czasu działania do 300 sekund")
@@ -36,22 +37,24 @@ func (c Config) Validate() error {
 }
 
 type Event struct {
-	ID        string    `json:"id"`
-	Trace     string    `json:"trace"`
-	Time      time.Time `json:"time"`
-	From      string    `json:"from"`
-	To        string    `json:"to"`
-	Kind      string    `json:"kind"`
-	Status    int       `json:"status"`
-	Duration  float64   `json:"duration_ms"`
-	Task      string    `json:"task,omitempty"`
-	Attempt   uint64    `json:"attempt,omitempty"`
-	Message   string    `json:"message,omitempty"`
-	Pod       string    `json:"pod"`
-	TargetPod string    `json:"target_pod,omitempty"`
-	Started   time.Time `json:"started,omitempty"`
-	Operation string    `json:"operation,omitempty"`
-	SpanID    string    `json:"span_id,omitempty"`
+	TransferBytes    *int64    `json:"transfer_bytes,omitempty"`
+	TransferProtocol string    `json:"transfer_protocol,omitempty"`
+	ID               string    `json:"id"`
+	Trace            string    `json:"trace"`
+	Time             time.Time `json:"time"`
+	From             string    `json:"from"`
+	To               string    `json:"to"`
+	Kind             string    `json:"kind"`
+	Status           int       `json:"status"`
+	Duration         float64   `json:"duration_ms"`
+	Task             string    `json:"task,omitempty"`
+	Attempt          uint64    `json:"attempt,omitempty"`
+	Message          string    `json:"message,omitempty"`
+	Pod              string    `json:"pod"`
+	TargetPod        string    `json:"target_pod,omitempty"`
+	Started          time.Time `json:"started,omitempty"`
+	Operation        string    `json:"operation,omitempty"`
+	SpanID           string    `json:"span_id,omitempty"`
 }
 type Task struct {
 	ID           string    `json:"id"`

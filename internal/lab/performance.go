@@ -48,6 +48,7 @@ func percentile(values []float64, p float64) float64 {
 }
 
 type perfBucket struct {
+	Network   map[string]*transferCounter
 	Roots     durations
 	Functions map[string]*durations
 }
@@ -63,20 +64,22 @@ type ResourceSample struct {
 	Expected   int       `json:"expected_pods"`
 }
 type Observatory struct {
+	started   time.Time
 	mu        sync.Mutex
 	buckets   map[int64]*perfBucket
 	resources []ResourceSample
 }
 
 func NewObservatory() *Observatory {
-	return &Observatory{buckets: map[int64]*perfBucket{}, resources: []ResourceSample{}}
+	return &Observatory{started: time.Now().UTC(), buckets: map[int64]*perfBucket{}, resources: []ResourceSample{}}
 }
 func (o *Observatory) record(e Event) {
 	if time.Since(e.Time) > 15*time.Minute || e.Time.After(time.Now().Add(time.Second)) {
 		return
 	}
 	root := e.Kind == "http" && e.To == "gateway"
-	if !root && e.Kind != "span" {
+	measured := e.TransferBytes != nil && *e.TransferBytes >= 0 && (e.TransferProtocol == "http-response" || e.TransferProtocol == "nats-message")
+	if !root && e.Kind != "span" && !measured {
 		return
 	}
 	key := e.Time.Unix() / 5 * 5
@@ -84,8 +87,15 @@ func (o *Observatory) record(e Event) {
 	defer o.mu.Unlock()
 	b := o.buckets[key]
 	if b == nil {
-		b = &perfBucket{Functions: map[string]*durations{}}
+		b = &perfBucket{Functions: map[string]*durations{}, Network: map[string]*transferCounter{}}
 		o.buckets[key] = b
+	}
+	if measured {
+		name := e.From + "→" + e.To + "/" + e.TransferProtocol
+		if b.Network[name] == nil {
+			b.Network[name] = &transferCounter{From: e.From, To: e.To, Protocol: e.TransferProtocol}
+		}
+		b.Network[name].add(e)
 	}
 	if root {
 		b.Roots.add(e.Duration, e.Status)
