@@ -44,7 +44,7 @@ independent bounded broker retention. [Limits and guarantees](docs/resilience.md
 The same view demonstrates native CPU **HPA**: provoke load on one worker, enable
 1–5 replicas, inspect the actual scaling reason, ready pods and measured effect.
 Reset restores the lab. Queue-driven autoscaling remains optional future work.
-[HPA workflow](docs/autoscaling.md).
+[HPA workflow](docs/autoscaling.md) · [Recorded HPA decision](docs/assets/autoscaling.png).
 
 ## Start
 

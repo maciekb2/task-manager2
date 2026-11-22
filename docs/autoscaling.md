@@ -32,3 +32,6 @@ buckets before/after native scaling, confirms real ready pods and CPU conditions
 and tests recovery after a real controller restart with an already-expired
 persisted deadline fixture. It does not require or promise a speedup on every
 machine. The stable source is the native [Kubernetes HPA documentation](https://kubernetes.io/docs/concepts/workloads/autoscaling/horizontal-pod-autoscale/).
+
+[Recorded native HPA decision and replica history](assets/autoscaling.png)
+(source `aafe725f08cd3f83`, actual UI; the current UI formats CPU more compactly).

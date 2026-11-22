@@ -383,3 +383,10 @@ API-driven HPA result remains valid; this UI flow correction requires fresh focu
 acceptance. Browser predicates that perform async fetch are replaced by explicit
 bounded polling of awaited evaluations in this acceptance, avoiding a premature
 wait result in the CLI bridge.
+
+At source `aafe725f08cd3f83`, immediate baseline → enable clicks now observed disabled
+controls during preparation, retained actual RPS=50/CPU settings and reached three
+ready pods with a native 497m → 200m/pod scaling decision. The browser verified real
+state through explicitly awaited bounded polling, stopped HPA, restored the base,
+and checked the 390 px layout without overflow. `docs/assets/autoscaling.png` is
+that actual UI capture; a later small change formats CPU as readable quantities.
