@@ -18,6 +18,7 @@ download() {
   mv "$target.tmp" "$target"
 }
 tools() {
+  [[ "$EUID" -ne 0 ]] || { echo 'Run the lab as a normal user with Docker access, not root.' >&2; exit 1; }
   for tool in docker curl python3 sha256sum; do command -v "$tool" >/dev/null || { echo "Required: $tool" >&2; exit 1; }; done
   [[ "$(uname -s)/$(uname -m)" == "Linux/x86_64" ]] || { echo "Bootstrap currently supports Linux amd64." >&2; exit 1; }
   docker info >/dev/null
@@ -77,7 +78,10 @@ PY
 case "${1:-up}" in
   up)
     tools
-    "$MK" start -p "$PROFILE" --driver=docker --container-runtime=containerd \
+    # This exact patch is verified by downloads/checksums and the runtime suite.
+    # v1.39.0's patch-catalog lookup ignores GITHUB_TOKEN and fails on shared-IP
+    # rate limits. The upstream --force option permits this pinned, tested pair.
+    "$MK" start -p "$PROFILE" --driver=docker --container-runtime=containerd --force \
       --cpus="${LAB_CPUS:-4}" --memory="${LAB_MEMORY:-6144}" --disk-size=16g \
       --kubernetes-version="$KUBERNETES_VERSION" --subnet=192.168.56.0/24 \
       --service-cluster-ip-range=10.110.0.0/16 --keep-context --embed-certs

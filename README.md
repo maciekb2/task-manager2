@@ -64,6 +64,12 @@ Minikube profile, builds the application image, loads it into the node, installs
 RBAC/storage/services/workloads, waits for readiness, and opens a loopback-only
 port-forward. Its kubeconfig is in `.state/`; your current kubectl context is not
 changed. Defaults: Minikube 1.39.0, Kubernetes 1.37.2, 4 CPU, 6144 MiB RAM.
+The pinned Minikube release predates this Kubernetes patch in its bundled catalog.
+Bootstrap uses its official `--force` option for this tested pair to avoid an
+anonymous GitHub version lookup failing on shared-IP rate limits. Run as a normal
+user with Docker access; root remains rejected. Checksums, explicit profile/context,
+readiness and the actual runtime/rollback suite still apply. This is not a generic
+promise that arbitrary Minikube/Kubernetes combinations will work.
 
 ```sh
 make status                   # Cluster and workloads

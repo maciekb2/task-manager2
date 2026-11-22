@@ -353,7 +353,8 @@ through make deploy. Images stayed identical, every broker/client pod identity
 changed through the credential digest, and old/new tasks completed. Both checks
 passed. No credential value was logged or exported.
 
-CI `45070783076` confirmed the authenticated Minikube lookup/bootstrap works. It
+CI `45070783076` bootstrapped on that runner. A later rate-limit failure showed
+that success did not prove authentication of its Kubernetes catalog lookup. It
 then exposed an existing probe race: `/api/state` legitimately reports cluster=null
 until observer discovery arrives; smoke's predicate dereferenced that null. The
 waiters now wait explicitly for discovery, preserving their time bounds and real
@@ -449,3 +450,25 @@ different ready-pod image identities, real HTTP 503, manual rollback, recovery
 intent across a real control restart, and the timed HTTP-200 restoration. This
 small probe/documentation follow-up changes no runtime input: the source image
 remains `fdd1599d48fca1f4` with the complete accepted runtime CI above.
+
+### Pinned Minikube patch-catalog availability
+
+Run [45075834925](https://github.com/maciekb2/task-manager2/actions/runs/45075834925)
+failed before cluster creation on a shared-IP GitHub rate limit, despite the
+step-scoped token. Inspection of the exact v1.39.0 source showed that
+`cmd/minikube/cmd/config/kubernetes_version.go:IsInGitHubKubernetesVersions` uses
+`github.NewClient(nil)`; token support in `pkg/minikube/download/gh` is a different
+path. The earlier inferred authentication fix was therefore incomplete.
+
+Bootstrap now uses the official --force option for the fixed, repeatedly tested
+v1.39.0/v1.37.2 pair; download checksums and actual runtime admission remain. Root
+is explicitly rejected before this flag, Docker access/Linux architecture checks
+remain, and only the dedicated project profile/kubeconfig is used. No upstream
+client/plugin is patched or a release API response fabricated. This does skip
+Minikube's broad preflight validations, so the supported machine prerequisites in
+README apply; arbitrary versions are not admitted by this script. The failure is
+retained rather than retried blindly for a green result.
+
+`make up` with that pinned-pair bootstrap completed locally without replacing the
+profile/data, reconciled all 14 deployments and reopened the loopback panel. The
+application source/image remains `fdd1599d48fca1f4`; no Go runtime changed.
