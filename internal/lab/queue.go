@@ -176,55 +176,32 @@ func (a *App) submitTasks(count, failures int) ([]string, error) {
 	}
 	return ids, nil
 }
+
+// The outcome source is the bounded broker stream itself. Avoid a second KV
+// projection with unique keys: it used to fill and could replay only span retention.
 func (a *App) startResultStore(mux *http.ServeMux) error {
-	kv, err := a.bus.js.KeyValue("lab-http-results")
-	if err != nil {
-		kv, err = a.bus.js.CreateKeyValue(&nats.KeyValueConfig{Bucket: "lab-http-results", TTL: time.Hour, Storage: nats.FileStorage, MaxBytes: 8 << 20})
-	}
-	if err != nil {
-		return err
-	}
-	_, err = a.bus.js.Subscribe("lab.events", func(m *nats.Msg) {
-		var e Event
-		if json.Unmarshal(m.Data, &e) != nil || e.From != "gateway" || e.Kind != "http" || time.Since(e.Time) > time.Hour {
+	mux.HandleFunc("GET /results", func(w http.ResponseWriter, r *http.Request) {
+		stream, err := a.bus.js.StreamInfo("OUTCOMES", nats.Context(r.Context()))
+		if err != nil {
+			writeJSON(w, 503, Object{"error": "outcome stream unavailable"})
 			return
 		}
-		raw, _ := json.Marshal(e)
-		if _, err := kv.Create(fmt.Sprintf("%020d-%s", e.Time.UnixNano(), e.ID), raw); err != nil && !errors.Is(err, nats.ErrKeyExists) {
-			fmt.Println("result-store:", err)
-		}
-	}, nats.OrderedConsumer(), nats.DeliverAll())
-	if err != nil {
-		return err
-	}
-	mux.HandleFunc("GET /results", func(w http.ResponseWriter, r *http.Request) {
-		items := []Event{}
-		if keys, e := kv.Keys(); e == nil {
-			sort.Sort(sort.Reverse(sort.StringSlice(keys)))
-			recent := []string{}
-			for _, key := range keys {
-				if len(key) > 20 && key[20] == '-' {
-					recent = append(recent, key)
+		result := []Event{}
+		for seq := stream.State.LastSeq; seq >= stream.State.FirstSeq && seq > 0 && len(result) < 50; seq-- {
+			msg, err := a.bus.js.GetMsg("OUTCOMES", seq, nats.Context(r.Context()))
+			if err != nil {
+				if errors.Is(err, nats.ErrMsgNotFound) {
+					continue
 				}
+				writeJSON(w, 503, Object{"error": "outcome read incomplete"})
+				return
 			}
-			if len(recent) > 50 {
-				recent = recent[:50]
-			}
-			for _, key := range recent {
-				entry, e := kv.Get(key)
-				if e == nil {
-					var event Event
-					if json.Unmarshal(entry.Value(), &event) == nil && time.Since(event.Time) <= time.Hour {
-						items = append(items, event)
-					}
-				}
+			var e Event
+			if json.Unmarshal(msg.Data, &e) == nil && time.Since(e.Time) <= time.Hour {
+				result = append(result, e)
 			}
 		}
-		sort.Slice(items, func(i, j int) bool { return items[i].Time.After(items[j].Time) })
-		if len(items) > 50 {
-			items = items[:50]
-		}
-		writeJSON(w, 200, items)
+		writeJSON(w, 200, result)
 	})
 	return nil
 }

@@ -108,10 +108,12 @@ roles = {
     "generator": ("gateway,nats,control", "Rzeczywiste żądania HTTP z limitem czasu i współbieżności"),
     "gateway": ("validator,nats", "Punkt wejścia i identyfikator korelacji żądania"),
     "validator": ("enricher,nats", "Walidacja liczby jednostek pracy; błędne żądania odrzuca HTTP 422"),
-    "enricher": ("echo,nats", "Wzbogacenie żądania o klasę pracy i identyfikator"),
+    "inventory": ("control", "Syntetyczny magazyn: równoległa gałąź fan-out"),
+    "pricing": ("control", "Syntetyczna wycena: druga gałąź fan-out"),
+    "enricher": ("echo,inventory,pricing,nats", "Wzbogacenie żądania o klasę pracy i identyfikator"),
     "echo": ("control", "Wykonanie pracy: opóźnienie, CPU, kontrolowany błąd HTTP"),
     "consumer": ("nats,gateway", "Konsument JetStream: ACK, ponowienia i dead-letter"),
-    "result-store": ("nats", "Idempotentny zapis wyników HTTP w trwałym KV JetStream"),
+    "result-store": ("nats", "Odczyt trwałego, niezależnego strumienia wyników HTTP JetStream"),
 }
 upstream = {"gateway": "validator", "validator": "enricher", "enricher": "echo"}
 def pod_spec(role):

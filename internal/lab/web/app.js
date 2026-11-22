@@ -3,8 +3,8 @@ const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let state = null, token = '', selected = '', trace = '', busy = false, toastTimer;
 const editable = new Set(['generator','gateway','validator','enricher','echo','consumer','result-store']);
-const positions = {web:[105,65],control:[325,65],observer:[545,65],jaeger:[705,65],'result-store':[875,65],generator:[105,265],gateway:[300,265],validator:[495,265],enricher:[690,265],echo:[885,265],job:[105,465],nats:[495,465],consumer:[885,465],'dead-letter':[885,595]};
-const titles = {jaeger:'Jaeger',web:'Web UI',control:'Control API',observer:'Observer',generator:'Traffic generator',gateway:'Gateway',validator:'Validator',enricher:'Enricher',echo:'HTTP worker',nats:'NATS JetStream',consumer:'Queue consumer','result-store':'Result store',job:'Jobs / CronJobs','dead-letter':'Dead-letter'};
+const positions = {web:[105,65],control:[325,65],observer:[545,65],jaeger:[705,65],'result-store':[875,65],generator:[105,265],gateway:[300,265],validator:[495,265],enricher:[690,265],echo:[885,265],job:[105,465],nats:[495,465],consumer:[885,465],inventory:[690,365],pricing:[885,365],'dead-letter':[885,595]};
+const titles = {inventory:'Inventory',pricing:'Pricing',jaeger:'Jaeger',web:'Web UI',control:'Control API',observer:'Observer',generator:'Traffic generator',gateway:'Gateway',validator:'Validator',enricher:'Enricher',echo:'HTTP worker',nats:'NATS JetStream',consumer:'Queue consumer','result-store':'Result store',job:'Jobs / CronJobs','dead-letter':'Dead-letter'};
 const colors = {web:'#88a5f2',control:'#88a5f2',observer:'#88a5f2',generator:'#6fe5bd',gateway:'#6fe5bd',validator:'#6fe5bd',enricher:'#6fe5bd',echo:'#6fe5bd',nats:'#f0bc6a',consumer:'#f0bc6a','result-store':'#b99df6',job:'#f0bc6a'};
 function notify(message, error=false) { $('toast').textContent=message; $('toast').className='show'+(error?' error':''); clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').className='',6000); }
 async function request(path, body, retry=true) {
@@ -20,7 +20,7 @@ function switchTab(tab) {
   $('viewTitle').textContent=document.querySelector(`.nav[data-tab="${tab}"] > span:last-child`).textContent;
   if(location.hash!==`#${tab}`)history.pushState(null,'',`#${tab}`);
   document.querySelectorAll('.nav').forEach(e=>{if(e.dataset.tab===tab)e.setAttribute('aria-current','page');else e.removeAttribute('aria-current');});
-  document.body.classList.toggle('learning-mode',tab==='learn'||tab==='portfolio'||tab==='experiments');document.querySelectorAll('[data-tab]').forEach(e=>e.classList.toggle('active',e.dataset.tab===tab));document.querySelectorAll('.view').forEach(e=>e.classList.toggle('active',e.id===`view-${tab}`));if(changed&&state)render();window.dispatchEvent(new CustomEvent('lab-tab',{detail:tab}));}
+  document.body.classList.toggle('learning-mode',tab==='learn'||tab==='portfolio'||tab==='experiments'||tab==='resilience');document.querySelectorAll('[data-tab]').forEach(e=>e.classList.toggle('active',e.dataset.tab===tab));document.querySelectorAll('.view').forEach(e=>e.classList.toggle('active',e.id===`view-${tab}`));if(changed&&state)render();window.dispatchEvent(new CustomEvent('lab-tab',{detail:tab}));}
 window.addEventListener('popstate',()=>switchTab(location.hash.slice(1)||'portfolio'));
 document.querySelectorAll('[data-tab]').forEach(e=>e.addEventListener('click',()=>switchTab(e.dataset.tab)));
 for(const name of ['rps','concurrency']) $(name).addEventListener('input',()=>$(name+'Value').value=$(name).value);
@@ -152,7 +152,7 @@ function render() {
   markup('nodeInfo',(c?.nodes||[]).map(n=>`<div class="node-summary"><strong>${esc(n.name)}</strong><small>${esc(n.version)} · CPU ${esc(n.capacity?.cpu)} · RAM ${esc(n.capacity?.memory)}<br>Ready: ${esc((n.conditions||[]).find(x=>x.type==='Ready')?.status||'Unknown')}</small></div>`).join('')+`<p class="muted">${esc(c?.usage_error||'Metryki CPU i RAM dostępne z Metrics Server.')}<br>Zakres obserwatora: węzły i zasoby namespace systems-lab. Bez dostępu do Secretów.</p>`);
   markup('serviceTable',table(['Usługa','Cluster IP','Porty','Selektor'],(c?.services||[]).map(s=>[esc(s.name),esc(s.ip),(s.ports||[]).map(p=>esc(p.port)+'/'+esc(p.protocol)).join(', '),`<span class="code">${esc(JSON.stringify(s.selector))}</span>`])));
   markup('kubeEvents',table(['Czas','Powód','Zasób','Wiadomość'],(c?.events||[]).slice(0,25).map(e=>[time(e.time),esc(e.reason),esc(e.object?.name),esc(e.message)])));
-  window.labExperimentState?.(state);window.labPortfolioUpdate?.(state);window.labNetworkState?.(state);window.labLearningUpdate?.(state);window.labPerformanceState?.(state);$('lastUpdate').textContent=`Odczyt panelu ${time(state.at)} · discovery ${time(c?.at)}`;
+  window.labExperimentState?.(state);window.labResilienceState?.(state);window.labPortfolioUpdate?.(state);window.labNetworkState?.(state);window.labLearningUpdate?.(state);window.labPerformanceState?.(state);$('lastUpdate').textContent=`Odczyt panelu ${time(state.at)} · discovery ${time(c?.at)}`;
 }
 async function refresh() {if(busy)return;busy=true;try{state=await request('/api/state');render();$('refreshStatus').textContent=`Odczyt ${time(state.at)} · co 3 s`;}catch(e){$('connection').textContent='Brak połączenia · ponawiam';$('connectionDot').className='status-dot';$('refreshStatus').textContent='Odczyt nieudany · ponawiam co 3 s';}finally{busy=false;}}
 async function init() {try{token=(await request('/api/session')).token;await refresh();}catch(e){notify('Panel uruchamia się. Ponawiam połączenie.',true);setTimeout(init,3000);return;}setInterval(()=>{if(!document.hidden)refresh();},3000);}

@@ -34,6 +34,7 @@ func connectBus() (*Bus, error) {
 }
 func (b *Bus) initialize() error {
 	configs := []*nats.StreamConfig{
+		{Name: "OUTCOMES", Subjects: []string{"lab.outcomes"}, Storage: nats.FileStorage, MaxAge: time.Hour, MaxMsgs: 10000, MaxBytes: 16 << 20},
 		{Name: "EVENTS", Subjects: []string{"lab.events"}, Storage: nats.FileStorage, MaxAge: time.Hour, MaxMsgs: 20000, MaxBytes: 32 << 20},
 		{Name: "TASKS", Subjects: []string{"tasks.queue"}, Storage: nats.FileStorage, Retention: nats.WorkQueuePolicy, MaxAge: time.Hour, MaxMsgs: 10000, MaxBytes: 16 << 20, Discard: nats.DiscardNew},
 		{Name: "DLQ", Subjects: []string{"tasks.dlq"}, Storage: nats.FileStorage, MaxAge: 24 * time.Hour, MaxMsgs: 1000, MaxBytes: 4 << 20},
@@ -70,6 +71,12 @@ func (b *Bus) readyTasks() error {
 func (b *Bus) emit(e Event) error {
 	raw, _ := json.Marshal(e)
 	_, err := b.js.Publish("lab.events", raw)
+	if e.From == "gateway" && e.Kind == "http" {
+		_, outcomeErr := b.js.Publish("lab.outcomes", raw, nats.MsgId(e.ID))
+		if err == nil {
+			err = outcomeErr
+		}
+	}
 	return err
 }
 func (b *Bus) putTask(t Task) error {

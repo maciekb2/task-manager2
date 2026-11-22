@@ -82,7 +82,7 @@ func Run() error {
 			if err = a.bus.readyTasks(); err != nil {
 				return err
 			}
-			if role == "echo" || role == "generator" {
+			if role == "echo" || role == "generator" || role == "gateway" || role == "enricher" || role == "inventory" || role == "pricing" {
 				if err = a.loadInitialConfig(ctx); err != nil {
 					return err
 				}
@@ -112,7 +112,12 @@ func Run() error {
 				if err = a.startResultStore(mux); err != nil {
 					return err
 				}
+			case "inventory", "pricing":
+				mux.HandleFunc("GET /work", a.branch)
 			case "gateway", "validator", "enricher":
+				if role == "gateway" {
+					mux.HandleFunc("GET /protection", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, a.protection.view()) })
+				}
 				mux.HandleFunc("GET /work", a.forward)
 			case "echo":
 				mux.HandleFunc("GET /work", a.echo)
@@ -164,6 +169,40 @@ func (a *App) forward(w http.ResponseWriter, r *http.Request) {
 	status := 502
 	defer func() { finish(status) }()
 	r = r.WithContext(ctx)
+	if a.role == "gateway" || a.role == "enricher" {
+		c, err := a.configForRun(ctx)
+		if err != nil {
+			status = 409
+			writeJSON(w, status, Object{"error": "phase configuration unavailable"})
+			return
+		}
+		if a.role == "gateway" {
+			ticket := a.protection.enter(c, time.Now())
+			if ticket.status != 0 {
+				status = ticket.status
+				a.protectionEvent(ctx, status, ticket.reason)
+				writeJSON(w, status, Object{"error": ticket.reason})
+				return
+			}
+			defer func() { a.protection.leave(c, status, time.Now(), ticket) }()
+			if c.TimeoutMS > 0 {
+				bounded, cancel := context.WithTimeout(ctx, time.Duration(c.TimeoutMS)*time.Millisecond)
+				defer cancel()
+				ctx = bounded
+				r = r.WithContext(ctx)
+			}
+		}
+		if a.role == "enricher" && c.FanOut {
+			if err := a.fanOut(ctx); err != nil {
+				status = 502
+				if ctx.Err() != nil {
+					status = 504
+				}
+				writeJSON(w, status, Object{"error": "required fan-out branch failed"})
+				return
+			}
+		}
+	}
 	start := time.Now()
 	if a.role == "validator" {
 		_, validated := a.operation(ctx, "validator.validate")
@@ -203,6 +242,10 @@ func (a *App) forward(w http.ResponseWriter, r *http.Request) {
 		body, _ = io.ReadAll(io.LimitReader(resp.Body, 16384))
 		transferred = byteCount(len(body))
 	} else {
+		if ctx.Err() != nil {
+			status = 504
+			a.protectionEvent(ctx, status, "upstream deadline/cancellation")
+		}
 		body, _ = json.Marshal(Object{"error": "upstream unavailable", "trace": trace})
 	}
 	to := strings.Split(strings.TrimPrefix(next, "http://"), ":")[0]

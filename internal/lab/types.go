@@ -17,6 +17,11 @@ const Namespace = "systems-lab"
 const ManagedLabel = "app.kubernetes.io/part-of=systems-lab"
 
 type Config struct {
+	TimeoutMS        int     `json:"timeout_ms"`
+	MaxInFlight      int     `json:"max_in_flight"`
+	Breaker          bool    `json:"breaker"`
+	FanOut           bool    `json:"fan_out"`
+	BranchDelayMS    int     `json:"branch_delay_ms"`
 	RunID            string  `json:"run_id,omitempty"`
 	ReleaseChangedAt float64 `json:"release_changed_at"`
 	DurationSeconds  int     `json:"duration_seconds"`
@@ -32,6 +37,9 @@ type Config struct {
 
 func DefaultConfig() Config { return Config{Concurrency: 4, DelayMS: 40} }
 func (c Config) Validate() error {
+	if c.TimeoutMS < 0 || c.TimeoutMS > 5000 || c.MaxInFlight < 0 || c.MaxInFlight > 20 || c.BranchDelayMS < 0 || c.BranchDelayMS > 2000 {
+		return fmt.Errorf("timeout 0–5000 ms; in-flight 0–20; branch delay 0–2000 ms")
+	}
 	if c.PayloadBytes < 0 || c.PayloadBytes > 8192 || c.RPS < 0 || c.RPS > 50 || c.Concurrency < 1 || c.Concurrency > 20 || c.DelayMS < 0 || c.DelayMS > 3000 || c.ErrorPercent < 0 || c.ErrorPercent > 100 || c.CPUMS < 0 || c.CPUMS > 50 {
 		return fmt.Errorf("parametry poza zakresem: rps 0–50, concurrency 1–20, delay 0–3000 ms, error 0–100%%, cpu 0–50 ms, payload 0–8192 B")
 	}
@@ -79,6 +87,7 @@ type Task struct {
 	QueueMS      float64   `json:"queue_ms"`
 }
 type App struct {
+	protection    protection
 	role          string
 	bus           *Bus
 	kube          *Kube
