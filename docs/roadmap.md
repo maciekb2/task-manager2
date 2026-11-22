@@ -29,7 +29,7 @@ rather than presenting deployment count as proof of architectural maturity.
       regression tests and actual lab acceptance. Preserve previous accepted proof
       for unchanged behavior.
 
-### 2. First portfolio release — merged and verified; release tag pending
+### 2. First portfolio release — accepted and merged
 
 - [x] Performance demo: provoke a bottleneck, inspect trace/resources, apply a
       change and show its measured effect.
@@ -40,8 +40,8 @@ rather than presenting deployment count as proof of architectural maturity.
       recovery proof.
 - [x] Verify supported clean-checkout bootstrap and automated checks on the selected
       existing delivery path. Do not invent CI success from local commands.
-- [ ] Publish a reviewed release after acceptance. Communicate predecessor migration
-      and archive the predecessor only after acceptance of its replacement.
+- [x] Publish the reviewed, verified first portfolio increment on main.
+      Tagged publication of the complete beta follows the accepted integration.
 
 ### 3. Reproducible experiments and comparison
 
@@ -76,7 +76,14 @@ payload transfer is not a packet/interface measurement.
 The full goal remains active until required stages are accepted. Optional features
 are explicitly identified above; they are not silently substituted for core work.
 
-Local acceptance for stages 3–5 is recorded in verification.md. Hosted acceptance
-for these later increments is still pending; checked implementation/runtime items
-are not a claim of final CI/release acceptance. Predecessor archival remains an
-explicit post-acceptance migration step, not a destructive bootstrap action.
+Local and hosted acceptance for all required stages is recorded in verification.md.
+Canonical CI 45073541926 passed the complete candidate at 49fd700 / source
+fdd1599d48fca1f4. Tagged publication and source identity are recorded on the GitHub
+release page. The optional queue-driven scaler remains future work.
+
+## Post-acceptance migration
+
+- [ ] After the owner reviews the replacement, communicate the successor in the
+      predecessor README and archive that repository. Preserve its branches,
+      history and unmerged examples. This separate migration follow-up is not a
+      destructive bootstrap action or a prerequisite for using this one-repo lab.

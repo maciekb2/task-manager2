@@ -406,3 +406,28 @@ both producers stop. Phase configuration also clears server-owned release/HPA
 fields supplied by a client, avoiding spurious recovery intent in an experiment.
 These focused corrections supersede the prior candidate; earlier accepted scopes
 remain evidence for their stated source, not a final green release.
+
+## Complete portfolio candidate accepted
+
+Canonical hosted CI [45073541926](https://github.com/maciekb2/task-manager2/actions/runs/45073541926)
+passed at `49fd70032a3040473dbe978a44566771e6424874`, runtime source/image
+`fdd1599d48fca1f4`. Every workflow step passed on a fresh isolated Minikube:
+unit/race and syntax, bootstrap, 15 basic cluster checks, native traces/resources,
+payload/retry accounting, control outage, broker/tracing config restoration, actual
+duplicate delivery and retained outcomes, startup/subscription recovery, immutable
+faulty image plus manual and restarted-controller timed rollback, 10 resilience
+checks including actual retention pressure, 2 existing-state/credential checks,
+6 native HPA checks and 17 experiment lifecycle/correlation checks. This includes
+the stopped-gateway readiness regression, server-owned phase fields and suspension
+of an actually enabled scoped CronJob after controller restart.
+
+The same source is deployed locally through the project kubeconfig. The final
+working tree is synthetic-only; scoped secret scanning reported no findings.
+Earlier cancelled candidates and fixture failures remain recorded above and are
+not counted as accepted runs. This receipt/documentation update changes no runtime
+source or workflow; its code evidence is the exact revision linked above. The
+complete beta's merge/tag and publication are recorded in GitHub Releases.
+
+Required implementation stages 1–5 are accepted. Queue-driven consumer scaling
+remains explicitly optional. Predecessor archival is a separate owner-review
+migration follow-up; no predecessor history was deleted.
