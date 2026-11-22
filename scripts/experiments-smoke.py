@@ -87,7 +87,7 @@ try:
  wait('interrupted run is explicit; sealed earlier results survive restart',lambda:api('/api/experiments'),lambda d:any(r['id']==partial and r['state']=='interrupted' and r['phases'][-1]['partial'] for r in d['experiments']) and any(r['id']==id and r['state']=='completed' for r in d['experiments']))
  token=api('/api/session')['token']
  assert api('/api/state')['config']['rps']==0
- wait('interrupted run stops both HTTP and its scheduled producer',lambda:api('/api/state'),lambda s:s['config']['rps']==0 and not s['config']['run_id'] and bool(s.get('cluster')) and all(c['suspended'] for c in s['cluster']['cronjobs']))
+ wait('interrupted run stops both HTTP and its scheduled producer',lambda:api('/api/state'),lambda s:s['config']['rps']==0 and not s['config'].get('run_id') and bool(s.get('cluster')) and all(c['suspended'] for c in s['cluster']['cronjobs']))
 finally:
  token=api('/api/session')['token'];api('/api/action',{'action':'reset'})
  (ROOT/'.state/experiments-smoke-results.json').write_text(json.dumps({'checks':checks,'at':time.time()},indent=2))
