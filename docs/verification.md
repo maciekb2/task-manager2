@@ -397,3 +397,12 @@ fan-out services. A regression stops the gateway, restores it through normal
 phase preparation and compares the phase start with the actual Pod Ready
 transition; a zero-traffic baseline is rejected. This fixes a reachable cause of
 short-run measurement skew, rather than redefining that skew as a complete result.
+
+Final lifecycle review found an interrupted scoped run stopped HTTP but could
+leave its enabled CronJob scheduling old-run work. Recovery now suspends that
+producer before clearing the persisted run ID (preserving retry intent on failure).
+The restart regression actually enables the scoped CronJob first, then verifies
+both producers stop. Phase configuration also clears server-owned release/HPA
+fields supplied by a client, avoiding spurious recovery intent in an experiment.
+These focused corrections supersede the prior candidate; earlier accepted scopes
+remain evidence for their stated source, not a final green release.

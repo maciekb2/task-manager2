@@ -267,6 +267,11 @@ func (a *App) initExperiments() error {
 	}
 	a.experiments = m
 	if a.config.RunID != "" {
+		// An interrupted scoped run must stop scheduled producers as well as HTTP.
+		// Keep RunID persisted if the patch fails so startup can retry recovery.
+		if err := a.kube.cron(true, "* * * * *", ""); err != nil {
+			return err
+		}
 		a.config.RunID = ""
 		a.config.RPS = 0
 		a.config.RunUntil = 0
@@ -413,6 +418,8 @@ func (a *App) experimentAction(action, id, name string, c Config, duration, repl
 	c.DurationSeconds = duration
 	c.RunUntil = unixSeconds(time.Now().Add(time.Duration(duration) * time.Second))
 	c.ReleaseUntil = 0
+	c.ReleaseChangedAt = 0
+	c.AutoscaleUntil = 0
 	c.RunID = active.ID + "-" + action
 	if err := c.Validate(); err != nil {
 		return nil, err

@@ -23,7 +23,7 @@ def wait(name,read,predicate,seconds=65):
 def record(id):return next(r for r in api('/api/experiments')['experiments'] if r['id']==id)
 def command(action,id='',**kw):return api('/api/experiments',dict(action=action,id=id,**kw))
 def phase(id,label,delay,duration=4):
- command(label,id,config={'rps':10,'concurrency':1,'delay_ms':delay,'cpu_ms':0,'error_percent':0,'payload_bytes':1024},duration_seconds=duration,replicas=2)
+ command(label,id,config={'rps':10,'concurrency':1,'delay_ms':delay,'cpu_ms':0,'error_percent':0,'payload_bytes':1024,'autoscale_until':time.time()+3600,'release_changed_at':time.time()+3600},duration_seconds=duration,replicas=2)
  return wait(label+' seals only its completed work',lambda:record(id),lambda r:r['phases'][-1]['state']=='completed' and r['phases'][-1]['summary']['complete'])['phases'][-1]
 token=api('/api/session')['token']
 # Clear a prior interrupted/aborted fixture through the same bounded reset.
@@ -48,6 +48,8 @@ try:
  ready=[c for p in pods if p['status']['phase']=='Running' and not p['metadata'].get('deletionTimestamp') for c in p['status']['conditions'] if c['type']=='Ready' and c['status']=='True']
  assert ready and all(datetime.fromisoformat(c['lastTransitionTime'].replace('Z','+00:00'))<=started for c in ready),'measurement started before the restored gateway was ready'
  assert baseline['summary']['count']>0,'zero-traffic baseline falsely accepted'
+ assert baseline['config']['autoscale_until']==0 and baseline['config']['release_until']==0 and baseline['config']['release_changed_at']==0
+ checks.append('phase configuration cannot supply server-owned rollout or HPA deadlines')
  checks.append('clock starts after restored gateway readiness, with actual successful work')
  variant=phase(id,'variant',400)
  assert baseline['id']!=variant['id']
@@ -78,11 +80,14 @@ try:
  partial=command('create',name='Explicit restart interruption')['active']
  command('baseline',partial,config={'rps':5,'concurrency':2,'delay_ms':0,'cpu_ms':0,'error_percent':0},duration_seconds=60,replicas=2)
  wait('interruption fixture is running',lambda:record(partial),lambda r:r['phases'][-1]['state']=='running')
+ api('/api/action',{'action':'cron','suspended':False,'schedule':'* * * * *'})
+ wait('scoped CronJob really enabled before interruption',lambda:api('/api/state'),lambda s:bool(s.get('cluster')) and any(not c['suspended'] for c in s['cluster']['cronjobs']))
  subprocess.run(K+['rollout','restart','deployment/control'],check=True,capture_output=True,timeout=30)
  subprocess.run(K+['rollout','status','deployment/control','--timeout=90s'],check=True,capture_output=True,timeout=100)
  wait('interrupted run is explicit; sealed earlier results survive restart',lambda:api('/api/experiments'),lambda d:any(r['id']==partial and r['state']=='interrupted' and r['phases'][-1]['partial'] for r in d['experiments']) and any(r['id']==id and r['state']=='completed' for r in d['experiments']))
  token=api('/api/session')['token']
  assert api('/api/state')['config']['rps']==0
+ wait('interrupted run stops both HTTP and its scheduled producer',lambda:api('/api/state'),lambda s:s['config']['rps']==0 and not s['config']['run_id'] and bool(s.get('cluster')) and all(c['suspended'] for c in s['cluster']['cronjobs']))
 finally:
  token=api('/api/session')['token'];api('/api/action',{'action':'reset'})
  (ROOT/'.state/experiments-smoke-results.json').write_text(json.dumps({'checks':checks,'at':time.time()},indent=2))
