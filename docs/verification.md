@@ -305,3 +305,17 @@ fully contained window with this Metrics Server cadence, so the suggested durati
 is now 180 s. The two response-time charts now use a shared vertical scale. Those
 small presentation changes await the next deploy/render check. API lifecycle
 acceptance also passed eleven checks after scoped admission was introduced.
+
+### Resilience runtime acceptance
+
+Deployed source `15c725cf2a9e19ec`: unit/race checks passed. Actual cluster checks
+proved gateway deadline/504, admission/429 with successful admitted work, open
+breaker suppression and successful half-open recovery. Native traces proved two
+parallel lookups overlapping by more than 100 ms, actual branch payload events and
+cancellation on deadline. An HTTP task completed while result-store was offline;
+20,001 synthetic span messages evicted the prior EVENTS window, while OUTCOMES
+sequence 106 and its payload/time stayed unchanged and became visible after facade
+restart. Ten distinct checks accepted (one fan-out check was repeated during the
+continuation). The original fixture stopped on Jaeger's transient 404 before SDK
+export; its bounded polling now tolerates that expected state. Prior protection
+checks were reused rather than rerun. Canonical CI remains pending for this stage.

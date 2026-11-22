@@ -73,7 +73,7 @@ def k(*args):
 token = api('/api/session', auth=False)['token']
 try:
     if not args.resume_failed_job:
-        initial = wait('discovery: 12 deployments, nodes, services, no API errors', lambda s: len(s.get('cluster', {}).get('deployments', [])) == 12 and bool(s['cluster']['nodes']) and not s['cluster']['errors'])
+        initial = wait('discovery: all expected lab services, nodes and no API errors', lambda s: {'web','control','observer','generator','gateway','validator','enricher','echo','inventory','pricing','consumer','result-store','nats','jaeger'} <= {d['name'] for d in s.get('cluster',{}).get('deployments',[])} and bool(s['cluster']['nodes']) and not s['cluster']['errors'])
         try:
             api('/api/action', {'action': 'scale', 'target': 'echo', 'replicas': 1}, auth=False)
             raise AssertionError('unauthenticated mutation succeeded')

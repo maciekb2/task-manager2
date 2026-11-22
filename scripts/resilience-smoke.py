@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Real protection, parallel branches and outcome retention under span eviction."""
-import json,os,subprocess,time,urllib.request
+import json,os,subprocess,time,urllib.request,sys
 from datetime import datetime
 from pathlib import Path
 ROOT=Path(__file__).resolve().parent.parent
@@ -13,8 +13,10 @@ def api(path,body=None):
 def wait(name,read,predicate,seconds=45):
  end=time.monotonic()+seconds
  while time.monotonic()<end:
-  value=read()
-  if predicate(value):checks.append(name);print('PASS',name,flush=True);return value
+  try:
+   value=read()
+   if predicate(value):checks.append(name);print('PASS',name,flush=True);return value
+  except (OSError,ValueError,KeyError,IndexError):pass
   time.sleep(.5)
  raise AssertionError(name)
 def stamp(t):return datetime.fromisoformat(t.replace('Z','+00:00')).timestamp()
@@ -23,21 +25,23 @@ def configure(**kw):
 def roots(s,after):return [e for e in s['events'] if e['kind']=='http' and e['from']=='generator' and stamp(e['time'])>after]
 def k(*args):return subprocess.check_output(K+list(args),text=True,timeout=120)
 token=api('/api/session')['token']
+if '--from-fanout' in sys.argv:checks=json.loads((ROOT/'.state/resilience-smoke-results.json').read_text())['checks']
 try:
  api('/api/action',{'action':'reset'})
- after=configure(delay_ms=800,timeout_ms=150)
- s=wait('gateway deadline returns real 504 without waiting full 800 ms',lambda:api('/api/state'),lambda s:len(roots(s,after))>=8 and all(e['status']==504 and e['duration_ms']<650 for e in roots(s,after)))
- p=api('/api/protection');assert p['timeouts']>0
- after=configure(rps=20,concurrency=20,delay_ms=800,max_in_flight=2)
- s=wait('bounded admission rejects excess with 429 while admitted work completes',lambda:api('/api/state'),lambda s:{200,429}<={e['status'] for e in roots(s,after)})
- p=api('/api/protection');assert p['active']<=2 and p['backpressure_rejections']>0
- after=configure(rps=10,error_percent=100,breaker=True)
- s=wait('open circuit rejects new roots without calling failing dependency',lambda:api('/api/state'),lambda s:len(roots(s,after))>=20 and any(e['kind']=='protection' and e['message']=='circuit-open' and stamp(e['time'])>after for e in s['events']))
- roots_now=roots(s,after);downstream=[e for e in s['events'] if e['kind']=='http' and e['to']=='echo' and stamp(e['time'])>after]
- assert len(downstream)<len(roots_now)/2,(len(downstream),len(roots_now))
- p=api('/api/protection');assert p['circuit_rejections']>0
- after=configure(rps=10,error_percent=0,breaker=True)
- wait('half-open successful probe closes circuit and restores HTTP 200',lambda:api('/api/state'),lambda s:any(e['status']==200 for e in roots(s,after+3)) and api('/api/protection')['state']=='closed')
+ if '--from-fanout' not in sys.argv:
+  after=configure(delay_ms=800,timeout_ms=150)
+  s=wait('gateway deadline returns real 504 without waiting full 800 ms',lambda:api('/api/state'),lambda s:len(roots(s,after))>=8 and all(e['status']==504 and e['duration_ms']<650 for e in roots(s,after)))
+  p=api('/api/protection');assert p['timeouts']>0
+  after=configure(rps=20,concurrency=20,delay_ms=800,max_in_flight=2)
+  s=wait('bounded admission rejects excess with 429 while admitted work completes',lambda:api('/api/state'),lambda s:{200,429}<={e['status'] for e in roots(s,after)})
+  p=api('/api/protection');assert p['active']<=2 and p['backpressure_rejections']>0
+  after=configure(rps=10,error_percent=100,breaker=True)
+  s=wait('open circuit rejects new roots without calling failing dependency',lambda:api('/api/state'),lambda s:len(roots(s,after))>=20 and any(e['kind']=='protection' and e['message']=='circuit-open' and stamp(e['time'])>after for e in s['events']))
+  roots_now=roots(s,after);downstream=[e for e in s['events'] if e['kind']=='http' and e['to']=='echo' and stamp(e['time'])>after]
+  assert len(downstream)<len(roots_now)/2,(len(downstream),len(roots_now))
+  p=api('/api/protection');assert p['circuit_rejections']>0
+  after=configure(rps=10,error_percent=0,breaker=True)
+  wait('half-open successful probe closes circuit and restores HTTP 200',lambda:api('/api/state'),lambda s:any(e['status']==200 for e in roots(s,after+3)) and api('/api/protection')['state']=='closed')
  after=configure(rps=4,concurrency=4,delay_ms=20,fan_out=True,branch_delay_ms=400)
  s=wait('fan-out calls both real services and completes the required aggregate',lambda:api('/api/state'),lambda s:any(e['status']==200 and 350<e['duration_ms']<900 for e in roots(s,after)))
  event=next(e for e in roots(s,after) if e['status']==200);trace=event['trace']
@@ -71,5 +75,6 @@ try:
  wait('offline outcome survives EVENTS capacity eviction and facade restart',lambda:api('/api/results'),lambda rows:any(e['trace']==trace for e in rows))
 finally:
  api('/api/action',{'action':'reset'})
+ checks=list(dict.fromkeys(checks))
  (ROOT/'.state/resilience-smoke-results.json').write_text(json.dumps({'checks':checks,'at':time.time()},indent=2))
 print('PASS',len(checks),'resilience checks',flush=True)
