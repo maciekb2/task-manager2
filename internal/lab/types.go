@@ -17,6 +17,7 @@ const Namespace = "systems-lab"
 const ManagedLabel = "app.kubernetes.io/part-of=systems-lab"
 
 type Config struct {
+	ReleaseUntil float64 `json:"release_until"`
 	PayloadBytes int     `json:"payload_bytes"`
 	RPS          int     `json:"rps"`
 	Concurrency  int     `json:"concurrency"`

@@ -8,9 +8,19 @@ live cluster resources, scale services, replace pods, build a queue backlog and
 watch Kubernetes Jobs run. Everything needed to create and configure the lab
 lives in this repository.
 
+[![Systems Lab portfolio](docs/assets/portfolio.png)](docs/assets/systems-lab-demo.mp4)
+
+[Watch the 53-second walkthrough](docs/assets/systems-lab-demo.mp4) ·
+[Interview demo script](docs/portfolio-demo.md) ·
+[Architecture decisions](docs/decisions/0001-local-portfolio-boundary.md)
+
 ## Pierwsze uruchomienie i nauka
 
-Po `make up` otwórz **http://127.0.0.1:18085** i zacznij od **Nauka krok po kroku**.
+Po `make up` otwórz **http://127.0.0.1:18085**. Domyślny widok **Demo portfolio**
+prowadzi przez trzy demonstracje: wydajność, niezawodną kolejkę i zmianę wersji
+z rollbackiem. [Scenariusz prezentacji](docs/portfolio-demo.md).
+
+Do poznania pojęć wybierz **Nauka krok po kroku**.
 Dziewięć polskich lekcji wyjaśnia cel, akcję, oczekiwany wynik i przyczynę zjawiska.
 Zaliczenie wymaga prawdziwych danych z klastra. Słownik tłumaczy Pod, Service,
 Deployment, trace/span, P95, ACK i DLQ.
@@ -141,7 +151,8 @@ the URL). It restores stopped traffic and the baseline response configuration.
 Reset stops traffic, restores the demo replica counts and suspends the CronJob. It
 does **not** erase task/event history or stop in-flight work instantly.
 
-The **Nauka** tab starts with a simplified guided experience. **Mapa przepływu**
+The **Demo portfolio** view starts with the engineering walkthrough; **Nauka**
+offers a simplified guided experience. **Mapa przepływu**
 can show just the HTTP path or the full infrastructure. **Performance & trace**
 has component/time filters, function timings, pod resource samples and native spans.
 CPU/RAM samples are not precise per-request CPU accounting. Chart history is 15
@@ -151,6 +162,7 @@ minutes in control memory; Jaeger retains up to 5000 traces in memory.
 
 ```sh
 make test                     # Go unit/race checks; downloads Go 1.26 if needed
+python3 scripts/release-smoke.py       # Real image update, HTTP failure and rollback
 python3 scripts/observability-smoke.py  # Focused OTel, resource history and queue timings
 make smoke                    # Real-cluster HTTP, scale, pod recovery, retry/DLQ,
                               # Job, failed Job and one real CronJob run (~3–5 min)
@@ -192,3 +204,11 @@ This continues the Task Manager experiments in one repository. The original code
 from this repository remains in [`legacy/v1`](legacy/v1). The separate
 [`task-manager`](https://github.com/maciekb2/task-manager) history is preserved;
 archiving that predecessor follows acceptance of this replacement, not bootstrap.
+
+## Automated acceptance
+
+[Systems Lab CI](https://github.com/maciekb2/task-manager2/actions/workflows/systems-lab.yml)
+uses an ephemeral Ubuntu hosted runner, native make/Python checks and a fresh local
+Minikube. It runs on pull requests and pushes to main, without private credentials
+or a self-hosted runner. Receipts go to the job summary; kubeconfigs/secrets are not
+uploaded. A CI lab run is separate from a production delivery pipeline.

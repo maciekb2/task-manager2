@@ -15,13 +15,13 @@ async function request(path, body, retry=true) {
 }
 async function act(body, message='Wykonano akcję') {try{const result=await request('/api/action',body);notify(result.name?`${message}: ${result.name}`:message);await refresh();return result;}catch(e){notify(e.message,true);}}
 function switchTab(tab) {
-  if(!document.getElementById(`view-${tab}`))tab='learn';
+  if(!document.getElementById(`view-${tab}`))tab='portfolio';
   const changed=!$(`view-${tab}`).classList.contains('active');
   $('viewTitle').textContent=document.querySelector(`.nav[data-tab="${tab}"] > span:last-child`).textContent;
   if(location.hash!==`#${tab}`)history.pushState(null,'',`#${tab}`);
   document.querySelectorAll('.nav').forEach(e=>{if(e.dataset.tab===tab)e.setAttribute('aria-current','page');else e.removeAttribute('aria-current');});
-  document.body.classList.toggle('learning-mode',tab==='learn');document.querySelectorAll('[data-tab]').forEach(e=>e.classList.toggle('active',e.dataset.tab===tab));document.querySelectorAll('.view').forEach(e=>e.classList.toggle('active',e.id===`view-${tab}`));if(changed&&state)render();window.dispatchEvent(new CustomEvent('lab-tab',{detail:tab}));}
-window.addEventListener('popstate',()=>switchTab(location.hash.slice(1)||'learn'));
+  document.body.classList.toggle('learning-mode',tab==='learn'||tab==='portfolio');document.querySelectorAll('[data-tab]').forEach(e=>e.classList.toggle('active',e.dataset.tab===tab));document.querySelectorAll('.view').forEach(e=>e.classList.toggle('active',e.id===`view-${tab}`));if(changed&&state)render();window.dispatchEvent(new CustomEvent('lab-tab',{detail:tab}));}
+window.addEventListener('popstate',()=>switchTab(location.hash.slice(1)||'portfolio'));
 document.querySelectorAll('[data-tab]').forEach(e=>e.addEventListener('click',()=>switchTab(e.dataset.tab)));
 for(const name of ['rps','concurrency']) $(name).addEventListener('input',()=>$(name+'Value').value=$(name).value);
 function values() {return {payload_bytes:+$('payload').value,rps:+$('rps').value,concurrency:+$('concurrency').value,delay_ms:+$('delay').value,error_percent:+$('errors').value,cpu_ms:+$('cpu').value,duration_seconds:+$('duration').value};}
@@ -108,7 +108,7 @@ function renderInspector() {
   if(node)content+=`<p class="muted">Deployment: ${esc(node.name)}<br>Gotowe repliki: ${node.ready||0} / ${node.replicas||0}<br>Zależności: ${esc((node.dependencies||[]).filter(Boolean).join(', ')||'Kubernetes API')}</p>`;
   if(selected==='generator')content+='<p class="muted">Jedna replika generatora utrzymuje wspólny limit ruchu eksperymentu. Skaluj usługi obsługujące żądania.</p>';
   if(editable.has(selected)&&selected!=='generator')content+=`<form id="scaleForm" class="field-pair"><div><label for="replicaCount">Liczba replik</label><input id="replicaCount" type="number" min="0" max="5" value="${node?.replicas||0}" required></div><button class="secondary">Zastosuj</button></form>`;
-  content+=pods.map(p=>`<div class="pod"><div class="pod-name">${esc(p.name)}</div><div class="pod-meta">${esc(p.phase)} · ready ${p.ready}/${p.containers} · restarty ${p.restarts}<br>${esc(p.ip||'bez IP')}<br>${esc(usageFor(p.name))}</div><div class="pod-actions"><button class="secondary" data-log="${esc(p.name)}">Logi</button>${editable.has(selected)?`<button class="secondary" data-restart="${esc(p.name)}">Odtwórz pod</button>`:''}</div></div>`).join('');
+  content+=pods.map(p=>`<div class="pod"><div class="pod-name">${esc(p.name)}</div><div class="pod-meta">${esc(p.phase)} · ready ${p.ready}/${p.containers} · restarty ${p.restarts}<br>${esc(p.ip||'bez IP')}<br>${esc(usageFor(p.name))}<br>Obraz: ${esc((p.images||[]).join(', '))}</div><div class="pod-actions"><button class="secondary" data-log="${esc(p.name)}">Logi</button>${editable.has(selected)?`<button class="secondary" data-restart="${esc(p.name)}">Odtwórz pod</button>`:''}</div></div>`).join('');
   const draft=panel.dataset.component===selected&&panel.dataset.replicas===String(node?.replicas||0)?$('replicaCount')?.value:undefined;
   if(!markup('inspector',content))return;
   panel.dataset.component=selected;panel.dataset.replicas=String(node?.replicas||0);
@@ -137,10 +137,10 @@ function render() {
   markup('nodeInfo',(c?.nodes||[]).map(n=>`<div class="node-summary"><strong>${esc(n.name)}</strong><small>${esc(n.version)} · CPU ${esc(n.capacity?.cpu)} · RAM ${esc(n.capacity?.memory)}<br>Ready: ${esc((n.conditions||[]).find(x=>x.type==='Ready')?.status||'Unknown')}</small></div>`).join('')+`<p class="muted">${esc(c?.usage_error||'Metryki CPU i RAM dostępne z Metrics Server.')}<br>Zakres obserwatora: węzły i zasoby namespace systems-lab. Bez dostępu do Secretów.</p>`);
   markup('serviceTable',table(['Usługa','Cluster IP','Porty','Selektor'],(c?.services||[]).map(s=>[esc(s.name),esc(s.ip),(s.ports||[]).map(p=>esc(p.port)+'/'+esc(p.protocol)).join(', '),`<span class="code">${esc(JSON.stringify(s.selector))}</span>`])));
   markup('kubeEvents',table(['Czas','Powód','Zasób','Wiadomość'],(c?.events||[]).slice(0,25).map(e=>[time(e.time),esc(e.reason),esc(e.object?.name),esc(e.message)])));
-  window.labNetworkState?.(state);window.labLearningUpdate?.(state);window.labPerformanceState?.(state);$('lastUpdate').textContent=`Odczyt panelu ${time(state.at)} · discovery ${time(c?.at)}`;
+  window.labPortfolioUpdate?.(state);window.labNetworkState?.(state);window.labLearningUpdate?.(state);window.labPerformanceState?.(state);$('lastUpdate').textContent=`Odczyt panelu ${time(state.at)} · discovery ${time(c?.at)}`;
 }
 async function refresh() {if(busy)return;busy=true;try{state=await request('/api/state');render();$('refreshStatus').textContent=`Odczyt ${time(state.at)} · co 3 s`;}catch(e){$('connection').textContent='Brak połączenia · ponawiam';$('connectionDot').className='status-dot';$('refreshStatus').textContent='Odczyt nieudany · ponawiam co 3 s';}finally{busy=false;}}
 async function init() {try{token=(await request('/api/session')).token;await refresh();}catch(e){notify('Panel uruchamia się. Ponawiam połączenie.',true);setTimeout(init,3000);return;}setInterval(()=>{if(!document.hidden)refresh();},3000);}
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});
-switchTab(location.hash.slice(1)||'learn');
+switchTab(location.hash.slice(1)||'portfolio');
 init();

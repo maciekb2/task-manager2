@@ -39,7 +39,7 @@ reproducible. A single node is not evidence of HA or production capacity.
 1. Delete one HTTP-worker pod from its inspector. Show the old identity, the
    replacement, and the return to desired readiness. Persistent data does not
    automatically follow an arbitrary stateless pod.
-2. Run the documented version-change/rollback acceptance once available. Show
+2. Use the prepared version-change/rollback controls or acceptance script. Show
    immutable source image identities, real replacement pods, traffic through them,
    and recovery of the original image. A successful rollout command alone is not
    the acceptance criterion.
@@ -52,5 +52,22 @@ reproducible. A single node is not evidence of HA or production capacity.
 - `docs/roadmap.md`: accepted goal and work still outstanding.
 - PR/build link: distinguish hosted automation from local runtime receipts.
 
-The version-change demonstration and recorded presentation are tracked deliverables
-in roadmap stage 2; this document does not claim they have already passed.
+Runtime acceptance and the recorded presentation are tracked in roadmap stage 2;
+see verification.md for their actual versions/status.
+
+The release controls are available in **Demo portfolio**. Start its ninety-second
+traffic run, deploy the prepared faulty version, observe pod image IDs/readiness
+and HTTP503, then restore the base version and verify a new HTTP200. Automatic
+rollback is scheduled after sixty seconds and survives a control restart. The
+headless equivalent is `python3 scripts/release-smoke.py`; it verifies both manual
+and automatic recovery, including a real controller restart.
+
+See [local-system tradeoffs](decisions/0001-local-portfolio-boundary.md) and
+[measurement/recovery contracts](decisions/0002-measurements-and-recovery.md).
+
+A [53-second recording](assets/systems-lab-demo.mp4) captures the actual local UI
+at source `ad538c0bf1329cba`: native waterfall, live map/network, queue retry and
+faulty-release/manual-rollback evidence. It is a short illustration, not a complete
+recording of every acceptance check. `python3 scripts/durability-smoke.py` separately
+proves actual broker redelivery without terminal-result mutation and outcome replay
+without renewing the stored KV revision/creation timestamp.

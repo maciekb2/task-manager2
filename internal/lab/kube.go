@@ -139,6 +139,12 @@ func (k *Kube) snapshot() Object {
 			v := Object{"name": textField(o, "metadata", "name"), "component": textField(o, "metadata", "labels", "app.kubernetes.io/component"), "created": field(o, "metadata", "creationTimestamp")}
 			switch key {
 			case "pods":
+				v["uid"] = textField(o, "metadata", "uid")
+				imageIDs := []string{}
+				for _, c := range itemsField(o, "status", "containerStatuses") {
+					imageIDs = append(imageIDs, textField(c, "imageID"))
+				}
+				v["image_ids"] = imageIDs
 				v["phase"] = textField(o, "status", "phase")
 				v["ip"] = textField(o, "status", "podIP")
 				v["node"] = textField(o, "spec", "nodeName")
@@ -161,6 +167,11 @@ func (k *Kube) snapshot() Object {
 				v["images"] = images
 				v["owners"] = field(o, "metadata", "ownerReferences")
 			case "deployments":
+				images := []string{}
+				for _, c := range itemsField(o, "spec", "template", "spec", "containers") {
+					images = append(images, textField(c, "image"))
+				}
+				v["images"] = images
 				v["replicas"] = numField(o, "spec", "replicas")
 				v["ready"] = numField(o, "status", "readyReplicas")
 				v["selector"] = field(o, "spec", "selector", "matchLabels")

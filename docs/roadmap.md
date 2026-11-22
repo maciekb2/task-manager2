@@ -17,7 +17,7 @@ rather than presenting deployment count as proof of architectural maturity.
 
 ## Delivery order and acceptance
 
-### 1. Trustworthy foundation — verified locally; hosted CI pending
+### 1. Trustworthy foundation — verified locally and in hosted CI
 
 - [x] Apply NATS/Jaeger configuration changes through repeatable rollouts.
 - [x] Preserve generator duration precision and rate while control is unavailable.
@@ -29,13 +29,13 @@ rather than presenting deployment count as proof of architectural maturity.
       regression tests and actual lab acceptance. Preserve previous accepted proof
       for unchanged behavior.
 
-### 2. First portfolio release
+### 2. First portfolio release — local demos verified; release/CI pending
 
-- [ ] Performance demo: provoke a bottleneck, inspect trace/resources, apply a
+- [x] Performance demo: provoke a bottleneck, inspect trace/resources, apply a
       change and show its measured effect.
-- [ ] Queue demo: backlog, retries/DLQ and duplicate handling with persisted outcomes.
-- [ ] Kubernetes demo: pod recovery plus an actual version update and tested rollback.
-- [ ] Interview-oriented README, architecture decisions, demo script and short
+- [x] Queue demo: backlog, retries/DLQ and duplicate handling with persisted outcomes.
+- [x] Kubernetes demo: pod recovery plus an actual version update and tested rollback.
+- [x] Interview-oriented README, architecture decisions, demo script and short
       visual presentation. Explicitly separate local checks, CI, deployment and
       recovery proof.
 - [ ] Verify supported clean-checkout bootstrap and automated checks on the selected

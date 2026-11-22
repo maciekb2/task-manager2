@@ -198,3 +198,46 @@ The public-repository CI workflow reuses native make/Python entrypoints and perf
 an isolated checkout bootstrap on an ephemeral hosted runner. Its actual run is
 recorded separately when available; adding YAML is not CI/CD acceptance. Workflow
 scope is this public lab, not private WatchMyApp/infrastructure repositories.
+
+Hosted foundation acceptance passed at commit `e2f08e4`, source
+`04bb4e48318bbfdc`: [CI run 45062176658](https://github.com/maciekb2/task-manager2/actions/runs/45062176658).
+The run completed unit/race/syntax checks, a clean-checkout Minikube bootstrap,
+full native HTTP/queue/Job/CronJob smoke, focused OTel/resource/queue, payload
+accounting, control-outage and config update/restoration checks. A redundant
+push-triggered run was cancelled before integration; subsequent workflow changes
+restrict branch pushes to main and use pull-request events for feature branches.
+This receipt does not claim the later portfolio release controls were in that build.
+
+## Portfolio walkthrough and verified rollback — 2026-11-22
+
+Local source `ad538c0bf1329cba` adds the portfolio landing page, bounded release
+controls and actual worker image changes. Bootstrap builds/loads both the base
+image and an `echo503` linker-flag variant with a source-derived `-demo-fault` tag.
+The panel accepts no client image/command/namespace input and targets only echo.
+Recovery intent is persisted before deploying the candidate and expires after 60 s.
+
+* Unit/race and syntax checks passed. Release selection rejects unconfigured or
+  foreign-image values. Existing unchanged foundation evidence is reused.
+* Runtime checked distinct image IDs, base HTTP200, ready candidate pods returning
+  actual HTTP503 and manual rollback to fresh HTTP200 from base pods.
+* The first release fixture stopped at a transient web-proxy HTTP502 immediately
+  after a control rollout. It had already accepted base/candidate/manual rollback.
+  The fixture now waits for the actual session API, including during cleanup, and
+  retains receipts on failure. A targeted continuation read the real action history:
+  control was recreated between candidate deployment and automatic restoration;
+  restoration happened 60.989 s after the candidate action, retained the original
+  recovery schedule, restored base image IDs and produced fresh HTTP200.
+* Actual UI interaction then verified performance/native waterfall, live map and
+  network payload controls, queue retry and candidate/manual-rollback evidence.
+  The 53-second recording in `assets/systems-lab-demo.mp4` is from that live run.
+  Eight views were checked at 390 px without document overflow. No JS exception
+  occurred; API errors during the deliberate controller restart are expected/retried.
+* `scripts/durability-smoke.py` passed actual broker redelivery: publication was not
+  broker-deduplicated, the consumer acknowledged its new sequence, the terminal KV
+  revision/value stayed identical and no application work event was produced.
+  A real result-store restart/replay preserved the HTTP outcome's original KV
+  revision, creation timestamp and value hash. Broker credentials were kept only
+  in process memory and an owned loopback port-forward; no credential is a receipt.
+
+Hosted CI for this later increment is recorded when available. The foundation CI
+receipt above is not misrepresented as acceptance of these new release controls.

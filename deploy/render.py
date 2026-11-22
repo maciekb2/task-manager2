@@ -116,6 +116,8 @@ roles = {
 upstream = {"gateway": "validator", "validator": "enricher", "enricher": "echo"}
 def pod_spec(role):
     env = [{"name": "ROLE", "value": role}, {"name": "LAB_VERSION", "value": VERSION}]
+    if role == "control":
+        env += [{"name":"LAB_IMAGE_CURRENT","value":IMAGE},{"name":"LAB_IMAGE_CANDIDATE","value":IMAGE+"-demo-fault"}]
     if role != "web":
         env += [{"name": "NATS_URL", "value": "nats://nats:4222"}, {"name": "NATS_TOKEN", "valueFrom": {"secretKeyRef": {"name": "lab-nats", "key": "token"}}}]
     if role in upstream:

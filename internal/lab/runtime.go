@@ -229,7 +229,7 @@ func (a *App) echo(w http.ResponseWriter, r *http.Request) {
 	}
 	finishCPU(200)
 	status = 200
-	if r.URL.Query().Get("failure") == "true" || rand.IntN(100) < c.ErrorPercent {
+	if demoFault == "echo503" || r.URL.Query().Get("failure") == "true" || rand.IntN(100) < c.ErrorPercent {
 		status = 503
 	}
 	w.Header().Set("X-Lab-Pod", os.Getenv("HOSTNAME"))

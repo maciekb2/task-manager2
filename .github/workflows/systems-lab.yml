@@ -3,7 +3,7 @@ on:
   pull_request:
     paths-ignore: ['legacy/**', '**.md']
   push:
-    branches: [main, feat/systems-lab]
+    branches: [main]
     paths-ignore: ['legacy/**', '**.md']
   workflow_dispatch:
 permissions:
@@ -41,6 +41,10 @@ jobs:
         run: python3 scripts/foundation-smoke.py
       - name: Config update and restoration
         run: python3 scripts/config-rollout-smoke.py
+      - name: Duplicate delivery and durable outcome replay
+        run: python3 scripts/durability-smoke.py
+      - name: Actual image update and rollback
+        run: python3 scripts/release-smoke.py
       - name: Report local development acceptance
         if: always()
         run: |

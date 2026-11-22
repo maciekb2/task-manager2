@@ -46,7 +46,9 @@ deploy() {
   LAB_VERSION="$(python3 "$ROOT/scripts/source-version.py")"
   export LAB_IMAGE="systems-lab:$LAB_VERSION"
   if ! docker image inspect "$LAB_IMAGE" >/dev/null 2>&1; then docker build --build-arg "VERSION=$LAB_VERSION" -t "$LAB_IMAGE" "$ROOT"; fi
+  if ! docker image inspect "$LAB_IMAGE-demo-fault" >/dev/null 2>&1; then docker build --build-arg "VERSION=$LAB_VERSION" --build-arg DEMO_FAULT=echo503 -t "$LAB_IMAGE-demo-fault" "$ROOT"; fi
   "$MK" -p "$PROFILE" image load "$LAB_IMAGE"
+  "$MK" -p "$PROFILE" image load "$LAB_IMAGE-demo-fault"
   k create namespace "$NS" --dry-run=client -o yaml | k apply -f -
   if ! k -n "$NS" get secret lab-nats >/dev/null 2>&1; then
     python3 - "$ROOT/.state/nats-token" <<'PY'

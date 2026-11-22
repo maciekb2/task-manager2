@@ -5,7 +5,8 @@ RUN go mod download
 COPY cmd ./cmd
 COPY internal ./internal
 ARG VERSION=dev
-RUN --mount=type=cache,target=/root/.cache/go-build CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /lab ./cmd/lab
+ARG DEMO_FAULT=
+RUN --mount=type=cache,target=/root/.cache/go-build CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/maciekb2/task-manager2/internal/lab.demoFault=${DEMO_FAULT}" -o /lab ./cmd/lab
 
 FROM alpine:3.23
 RUN apk add --no-cache ca-certificates && adduser -D -u 10001 lab
