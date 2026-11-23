@@ -1,7 +1,7 @@
 (() => {
  const settings=(scenario,duration=60)=>({...scenarios[scenario],payload_bytes:0,duration_seconds:duration});
  async function traffic(scenario,view) {
-  try{await request('/api/config',settings(scenario));await refresh();if(view)switchTab(view);notify('Demo uruchomione. Porównuj rzeczywiste dane i czasy pomiarów.');}catch(e){notify(e.message,true);}
+  try{await request('/api/config',settings(scenario));await refresh();if(view){switchTab(view);if(view==='performance')window.labPanels?.show('performance','overview');}notify('Demo uruchomione. Porównuj rzeczywiste dane i czasy pomiarów.');}catch(e){notify(e.message,true);}
  }
  $('portfolioNormal').onclick=()=>traffic('normal','performance');$('portfolioSlow').onclick=()=>traffic('slow','performance');$('portfolioCPU').onclick=()=>traffic('cpu','performance');
  $('portfolioQueue').onclick=()=>switchTab('queue');$('portfolioLearn').onclick=()=>switchTab('learn');
