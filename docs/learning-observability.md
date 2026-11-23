@@ -24,7 +24,11 @@ zapamiętany w tej przeglądarce. Lekcję można powtórzyć.
 wstrzymuje CronJob. Zachowuje historię i wyniki. Przyjęte żądania mogą jeszcze
 kończyć pracę; pody też nie znikają natychmiast.
 
-## Jak czytać Performance & trace
+## Jak czytać Wydajność i ślady
+
+Zacznij od zakładki **Przegląd** z wykresami. W **Etapy i pody** sprawdzisz
+czasy funkcji oraz próbki CPU/RAM poszczególnych podów. **Ślady żądań** pokazują
+drogę jednego żądania, a **Czas zadań** — pracę kolejki i Jobów.
 
 * **CPU podów** to suma pomiarów dla procesów laboratorium. Jeden rdzeń to około
   1000 mCPU. Wykres węzła obejmuje również Kubernetes/control plane — dane pochodzą

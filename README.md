@@ -25,19 +25,39 @@ Dziewięć polskich lekcji wyjaśnia cel, akcję, oczekiwany wynik i przyczynę 
 Zaliczenie wymaga prawdziwych danych z klastra. Słownik tłumaczy Pod, Service,
 Deployment, trace/span, P95, ACK i DLQ.
 
-W **Performance & trace** zobaczysz wykresy CPU/RAM z Kubernetes Metrics API,
+W **Wydajność i ślady** zobaczysz wykresy CPU/RAM z Kubernetes Metrics API,
 ruch i opóźnienia, czasy funkcji/etapów, czasy zadań oraz waterfall OpenTelemetry.
 Jaeger jest dostępny pod `/tracing/` przez ten sam lokalny panel. Dane nie wymagają
 monitorowania systemu hosta. [Polski przewodnik](docs/learning-observability.md).
 
+Menu grupuje widoki według celu: **Zacznij tutaj**, **Obserwuj**,
+**Eksperymentuj** i **Środowisko**. Przycisk przy tytule Systems Lab zwija menu
+do ikon, zostawiając więcej miejsca na dane. Na telefonie otwiera wysuwany panel;
+zamkniesz go krzyżykiem, kliknięciem tła albo klawiszem Escape.
+
+Długie widoki mają własne zakładki:
+
+| Widok | Co znajdziesz w zakładkach |
+| --- | --- |
+| Wydajność i ślady | Wykresy, etapy i pody, ślady żądań, czas zadań |
+| Mapa przepływu | Mapa usług, zdarzenia i ślad, zachowane wyniki |
+| Porównanie A/B | Przygotowanie prób, porównanie wyników, oś czasu i ślady |
+| Odporność i HPA | Scenariusze awarii, stan ochrony, automatyczne skalowanie |
+| Klaster | Węzły i zasoby, usługi, konfiguracja, zdarzenia Kubernetes |
+
+Wybór zakładek i zwinięcie menu są zapamiętywane w tej przeglądarce.
+Odświeżanie danych nie przełącza zakładek ani nie usuwa wpisanych ustawień.
+Strzałki lewo/prawo oraz Home/End zmieniają zakładkę z klawiatury.
+Kliknięcie śladu otwiera od razu odpowiednią zakładkę.
+
 ## Experiments, resilience and automatic response
 
-**Eksperymenty A/B** measures a scoped baseline and one intervention: propagated
+**Porównanie A/B** measures a scoped baseline and one intervention: propagated
 run IDs, configuration snapshots, actual throughput/latency/payload, traces,
 action timeline and downloadable JSON. Complete CPU/RAM windows are required;
 missing measurements stay missing. [Experiment contract](docs/experiments.md).
 
-**Odporność systemu** demonstrates timeout/504, admission/429, circuit breaker
+**Odporność i HPA** demonstrates timeout/504, admission/429, circuit breaker
 suppression/recovery and real parallel inventory/pricing calls. Outcomes have
 independent bounded broker retention. [Limits and guarantees](docs/resilience.md).
 

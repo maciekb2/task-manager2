@@ -17,6 +17,7 @@ async function act(body, message='Wykonano akcję') {try{const result=await requ
 function switchTab(tab) {
   if(!document.getElementById(`view-${tab}`))tab='portfolio';
   const changed=!$(`view-${tab}`).classList.contains('active');
+  document.body.dataset.view=tab;
   $('viewTitle').textContent=document.querySelector(`.nav[data-tab="${tab}"] > span:last-child`).textContent;
   if(location.hash!==`#${tab}`)history.pushState(null,'',`#${tab}`);
   document.querySelectorAll('.nav').forEach(e=>{if(e.dataset.tab===tab)e.setAttribute('aria-current','page');else e.removeAttribute('aria-current');});
@@ -132,7 +133,7 @@ function renderInspector() {
   panel.querySelectorAll('[data-log]').forEach(b=>b.addEventListener('click',async()=>{try{const v=await request('/api/logs?pod='+encodeURIComponent(b.dataset.log));$('logTitle').textContent=b.dataset.log;$('logText').textContent=v.logs;$('logDialog').showModal();}catch(e){notify(e.message,true);}}));
 }
 $('closeLogs').addEventListener('click',()=>$('logDialog').close());
-async function renderTrace(id) {trace=id;try{const events=await request('/api/trace?id='+encodeURIComponent(id));$('traceView').innerHTML=`<button class="secondary" id="fullTrace">Otwórz pełny trace OpenTelemetry →</button>`+`<div class="trace-id">${esc(id)}</div>`+events.map(e=>`<div class="trace-row"><span>${esc(e.from)} → ${esc(e.to)}</span><span class="code ${e.status>=400?'bad':''}">${e.status||e.kind} · ${e.duration_ms.toFixed(1)} ms</span><small>${esc(e.message||e.operation||e.target_pod||e.pod)}${e.attempt?' · próba '+e.attempt:''}</small></div>`).join('');$('fullTrace').onclick=()=>window.showPerformanceTrace?.(id);}catch(e){notify(e.message,true);}}
+async function renderTrace(id) {window.labPanels?.show('map','events');trace=id;try{const events=await request('/api/trace?id='+encodeURIComponent(id));$('traceView').innerHTML=`<button class="secondary" id="fullTrace">Otwórz pełny trace OpenTelemetry →</button>`+`<div class="trace-id">${esc(id)}</div>`+events.map(e=>`<div class="trace-row"><span>${esc(e.from)} → ${esc(e.to)}</span><span class="code ${e.status>=400?'bad':''}">${e.status||e.kind} · ${e.duration_ms.toFixed(1)} ms</span><small>${esc(e.message||e.operation||e.target_pod||e.pod)}${e.attempt?' · próba '+e.attempt:''}</small></div>`).join('');$('fullTrace').onclick=()=>window.showPerformanceTrace?.(id);}catch(e){notify(e.message,true);}}
 function render() {
   const c=state.cluster,config=state.config,m=state.metrics,queue=state.queue,pods=c?.pods||[];
   syncTrafficForm();

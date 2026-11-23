@@ -35,7 +35,7 @@
     $('timedJobs').querySelectorAll('[data-job-otel]').forEach(b=>b.onclick=()=>showTrace(b.dataset.jobOtel));
   };
   async function showTrace(id) {
-    activeTrace=id;switchTab('performance');$('waterfall').innerHTML='<p class="muted">Pobieram rzeczywiste spany OpenTelemetry z Jaegera…</p>';
+    activeTrace=id;switchTab('performance');window.labPanels?.show('performance','trace');$('waterfall').innerHTML='<p class="muted">Pobieram rzeczywiste spany OpenTelemetry z Jaegera…</p>';
     try{
       const result=await request('/api/otel/trace?id='+encodeURIComponent(id));if(activeTrace!==id)return;
       const trace=result.data?.[0],spans=trace?.spans||[];const run=spans.flatMap(s=>s.tags||[]).find(t=>t.key==='lab.run.id'&&t.value)?.value;if(!spans.length)throw Error('Trace jeszcze nie dotarł albo wygasł. SDK eksportuje spany partiami; spróbuj ponownie za chwilę.');
